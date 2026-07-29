@@ -21,7 +21,7 @@
 - Vite + React 19 + TypeScript, Tailwind CSS v4
 - 백엔드 없음 — **BYOK**(Bring Your Own Key) Gemini. API 키는 브라우저 localStorage에만 저장되고 Google로 직접 호출됩니다.
 - Gemini `responseSchema`로 JSON 강제 출력 → 파싱 오류 방지.
-- Vercel 정적 배포용(`vercel.json` 포함).
+- 정적 배포 — GitHub Pages(Actions 빌드, `.github/workflows/deploy.yml`) 또는 Vercel(`vercel.json`).
 
 ## 로컬 실행
 
@@ -33,24 +33,26 @@ npm run build    # tsc 타입체크 + 정적 빌드 → dist/
 
 앱을 열고 우상단 **API 키 설정**에서 [Google AI Studio](https://aistudio.google.com/app/apikey) 키를 등록하세요.
 
-## 배포 (Vercel)
+## 배포 (GitHub Pages)
 
-백엔드가 없는 정적 앱이라 Vercel의 GitHub 연동만으로 배포됩니다. `vercel.json`에 프레임워크(vite)·빌드·출력·SPA 리라이트가 명시돼 있어 추가 설정이 필요 없습니다.
+백엔드가 없는 정적 앱이라 **GitHub Actions로 빌드해 Pages에 배포**합니다. `.github/workflows/deploy.yml`이 `main` 푸시마다 `npm ci && npm run build` 후 산출물을 Pages에 올립니다. 별도 시크릿은 필요 없습니다(`GITHUB_TOKEN` 자동 사용).
 
-**최초 1회 연결** (Vercel 계정 인증이 필요하므로 저장소 소유자가 직접 수행):
+> ⚠️ 클래식 Pages("Deploy from a branch")는 빌드를 하지 않아 이 Vite 앱을 서빙하면 빈 화면이 됩니다. 반드시 아래 소스 설정을 **GitHub Actions**로 바꿔야 합니다.
 
-1. [vercel.com/new](https://vercel.com/new) → **Import Git Repository** → `yurowa90/UbD` 선택.
-2. Framework Preset이 **Vite**로 자동 인식됩니다(Build: `npm run build`, Output: `dist`). 그대로 **Deploy**.
-3. 환경 변수는 없습니다 — Gemini 키는 각 사용자가 브라우저에서 직접 등록하는 **BYOK**라 서버에 아무 비밀도 두지 않습니다.
+**최초 1회 설정** (저장소 소유자가 직접 — 저장소 관리 설정이라 커밋으로는 못 바꿈):
 
-연결 후에는 `main`에 푸시할 때마다 자동 재배포되고, 다른 브랜치·PR은 미리보기 URL이 생성됩니다.
+1. GitHub → 저장소 **Settings → Pages → Build and deployment → Source**를 **GitHub Actions**로 변경.
+2. 그 뒤 `main`에 푸시하면(또는 Actions 탭에서 "Deploy to GitHub Pages"를 수동 실행) 빌드·배포가 돌아갑니다.
+3. 배포 URL: **https://yurowa90.github.io/UbD/**
 
-> CLI로 배포하려면 로컬에서 `npx vercel`(최초) → `npx vercel --prod`. 토큰 기반 무인 배포는 `npx vercel --prod --token=$VERCEL_TOKEN`.
+경로 처리: Pages는 `/UbD/` 하위 경로로 서빙되므로, Pages 빌드일 때만 Vite `base`를 `/UbD/`로 둡니다(`vite.config.ts`, 워크플로가 `GITHUB_PAGES=true` 지정). 데이터 파일 fetch는 `import.meta.env.BASE_URL`을 써서 자동으로 `/UbD/science_standards.json`으로 해석됩니다.
 
 ### 확인 사항
 
-- `public/science_standards.json`(≈503KB, gzip 69KB)은 출력 루트에 정적 파일로 서빙되며, SPA 리라이트는 확장자 없는 경로에만 적용되어 이 파일 fetch를 가로채지 않습니다.
-- 아웃바운드는 브라우저 → Google Generative Language API 직접 호출뿐입니다.
+- `public/science_standards.json`(≈503KB, gzip 69KB)은 출력 루트에 정적 파일로 서빙됩니다.
+- 아웃바운드는 브라우저 → Google Generative Language API 직접 호출뿐입니다. 서버 비밀 없음(BYOK).
+
+> 대안: Vercel로도 배포 가능합니다(`vercel.json` 포함, base는 루트 `/`). [vercel.com/new](https://vercel.com/new)에서 저장소를 Import하면 Vite로 자동 인식됩니다.
 
 ## 구조
 
