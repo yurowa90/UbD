@@ -16,6 +16,8 @@
 
 선택: **UDL 산출물 옵션** 토글을 켜면 같은 이해를 여러 산출 형태(보고서·발표·영상·모형)로 드러내도록 P를 다양화합니다(UDL 3.0 행동·표현의 다양한 수단).
 
+**내보내기**: 완성된 결과는 **PDF**(브라우저 인쇄 — 한글 그대로, 인쇄 전용 레이아웃) · **엑셀 .xlsx**(개요·GRASPS·루브릭 3시트, 클릭 시에만 라이브러리 동적 로드) · **Markdown**(복사·다운로드)으로 저장할 수 있습니다.
+
 ## 스택
 
 - Vite + React 19 + TypeScript, Tailwind CSS v4
@@ -71,7 +73,7 @@ src/
 │  ├─ standards.ts        # 공식 성취기준 로드 + 학교급/과목/영역 캐스케이드 헬퍼
 │  ├─ prompts.ts          # buildStage1*/buildCandidates*/buildFinal* + JSON 스키마
 │  ├─ markers.ts          # 정렬 마커 팔레트
-│  ├─ export.ts           # toMarkdown / 복사 / 다운로드
+│  ├─ export.ts           # PDF(인쇄)·엑셀(.xlsx, 동적 로드)·Markdown 내보내기
 │  └─ storage.ts          # localStorage 래퍼
 ├─ knowledge/             # Phase 0 증류 지식 (시스템 프롬프트에 임베드)
 │  ├─ ubd_stage1.md       # Stage 1 판별 기준 + Figure 1·2 원문 예시

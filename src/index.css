@@ -76,3 +76,20 @@ body {
   outline-offset: 2px;
   border-radius: 2px;
 }
+
+/* PDF 인쇄 — 화면 크롬은 숨기고 결과만 종이에 깔끔하게 */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .rise-in {
+    animation: none !important;
+  }
+}

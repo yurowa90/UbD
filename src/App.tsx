@@ -16,7 +16,14 @@ import {
   verifyGraspsFinal,
 } from "./lib/gemini";
 import { API_KEY_STORAGE, MODEL_STORAGE, storage } from "./lib/storage";
-import { copyToClipboard, downloadMarkdown, toMarkdown } from "./lib/export";
+import {
+  copyToClipboard,
+  downloadMarkdown,
+  downloadXlsx,
+  printResult,
+  safeBaseName,
+  toMarkdown,
+} from "./lib/export";
 import ApiKeyModal from "./components/ApiKeyModal";
 import InputForm from "./components/InputForm";
 import Stage1Review from "./components/Stage1Review";
@@ -161,14 +168,21 @@ export default function App() {
 
   function handleDownload() {
     if (stage1 && task) {
-      const name = `grasps_${input.subject || "과제"}_${input.grade || ""}`
-        .replace(/\s+/g, "")
-        .replace(/[^\p{L}\p{N}_-]/gu, "");
       downloadMarkdown(
-        `${name || "grasps"}.md`,
+        `${safeBaseName(input)}.md`,
         toMarkdown(input, stage1, task),
       );
     }
+  }
+
+  function handleDownloadXlsx() {
+    if (stage1 && task) {
+      void downloadXlsx(input, stage1, task, `${safeBaseName(input)}.xlsx`);
+    }
+  }
+
+  function handlePrint() {
+    printResult(safeBaseName(input));
   }
 
   function handleRestart() {
@@ -184,7 +198,7 @@ export default function App() {
   return (
     <div className="min-h-screen">
       {/* 헤더 / 히어로 */}
-      <header className="blueprint-grid relative overflow-hidden text-paper">
+      <header className="blueprint-grid relative overflow-hidden text-paper print:hidden">
         <div className="relative mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
           <div className="flex items-start justify-between gap-4">
             <div className="max-w-2xl">
@@ -315,12 +329,14 @@ export default function App() {
             onReselect={() => setStep("candidates")}
             onCopy={handleCopy}
             onDownload={handleDownload}
+            onDownloadXlsx={handleDownloadXlsx}
+            onPrint={handlePrint}
             onRestart={handleRestart}
           />
         )}
       </main>
 
-      <footer className="mx-auto max-w-5xl px-5 pb-10 text-center text-xs text-ink-soft sm:px-8">
+      <footer className="mx-auto max-w-5xl px-5 pb-10 text-center text-xs text-ink-soft sm:px-8 print:hidden">
         <p>
           백워드 설계(Wiggins &amp; McTighe, 2005) · UDL Guidelines 3.0(CAST,
           2024) 기반 · BYOK Gemini · 데이터는 브라우저에만 저장됩니다.

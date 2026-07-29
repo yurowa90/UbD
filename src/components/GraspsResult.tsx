@@ -12,6 +12,8 @@ interface Props {
   onReselect: () => void;
   onCopy: () => void;
   onDownload: () => void;
+  onDownloadXlsx: () => void;
+  onPrint: () => void;
   onRestart: () => void;
 }
 
@@ -37,6 +39,8 @@ export default function GraspsResult({
   onReselect,
   onCopy,
   onDownload,
+  onDownloadXlsx,
+  onPrint,
   onRestart,
 }: Props) {
   const [copied, setCopied] = useState(false);
@@ -50,12 +54,18 @@ export default function GraspsResult({
   return (
     <div className="rise-in mx-auto max-w-4xl">
       {/* 액션 바 */}
-      <div className="sticky top-2 z-10 mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-paper-line bg-paper/90 p-2 shadow-sm backdrop-blur">
+      <div className="sticky top-2 z-10 mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-paper-line bg-paper/90 p-2 shadow-sm backdrop-blur print:hidden">
         <button
-          onClick={handleCopy}
+          onClick={onPrint}
+          className="rounded-lg bg-blueprint px-3 py-2 text-sm font-semibold text-white hover:bg-blueprint-deep"
+        >
+          PDF로 저장
+        </button>
+        <button
+          onClick={onDownloadXlsx}
           className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-ink ring-1 ring-paper-line hover:bg-paper"
         >
-          {copied ? "복사됨 ✓" : "Markdown 복사"}
+          엑셀(.xlsx) 다운로드
         </button>
         <button
           onClick={onDownload}
@@ -64,11 +74,17 @@ export default function GraspsResult({
           .md 다운로드
         </button>
         <button
+          onClick={handleCopy}
+          className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-ink ring-1 ring-paper-line hover:bg-paper"
+        >
+          {copied ? "복사됨 ✓" : "Markdown 복사"}
+        </button>
+        <button
           onClick={onRegenerate}
           disabled={busy}
           className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-ink ring-1 ring-paper-line hover:bg-paper disabled:opacity-40"
         >
-          {busy ? "다시 생성 중…" : "안내문·루브릭 다시 생성"}
+          {busy ? "다시 생성 중…" : "다시 생성"}
         </button>
         <button
           onClick={onReselect}
@@ -85,6 +101,13 @@ export default function GraspsResult({
             새 과제
           </button>
         </div>
+      </div>
+
+      {/* 인쇄 전용 제목 (화면 헤더는 인쇄 시 숨김) */}
+      <div className="mb-4 hidden print:block">
+        <h1 className="serif text-xl font-bold text-ink">
+          GRASPS 수행평가 설계안
+        </h1>
       </div>
 
       {/* 자기검증 결과 */}
@@ -136,7 +159,7 @@ export default function GraspsResult({
           {GRASPS_ROWS.map((row) => (
             <div
               key={row.name}
-              className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-paper-line"
+              className="break-inside-avoid rounded-xl bg-white p-4 shadow-sm ring-1 ring-paper-line"
             >
               <div className="flex items-baseline gap-2">
                 <span className="serif text-2xl font-bold text-thread">
@@ -155,11 +178,11 @@ export default function GraspsResult({
       </section>
 
       {/* 학생용 안내문 */}
-      <section className="mt-6 rounded-xl bg-blueprint p-6 text-paper shadow-sm">
-        <h3 className="serif text-sm font-bold tracking-wide text-white/80">
+      <section className="mt-6 break-inside-avoid rounded-xl bg-blueprint p-6 text-paper shadow-sm print:bg-white print:text-ink print:shadow-none print:ring-1 print:ring-paper-line">
+        <h3 className="serif text-sm font-bold tracking-wide text-white/80 print:text-ink-soft">
           학생용 과제 안내문
         </h3>
-        <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-paper/95">
+        <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-paper/95 print:text-ink">
           {task.studentPrompt}
         </p>
       </section>
@@ -206,7 +229,7 @@ export default function GraspsResult({
             return (
               <div
                 key={idx}
-                className={`overflow-hidden rounded-xl border-l-4 ${m.edge} bg-white shadow-sm ring-1 ring-paper-line`}
+                className={`break-inside-avoid overflow-hidden rounded-xl border-l-4 ${m.edge} bg-white shadow-sm ring-1 ring-paper-line`}
               >
                 <div className={`px-4 py-3 ${m.surface}`}>
                   <div className="flex items-center gap-2">

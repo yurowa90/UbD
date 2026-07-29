@@ -88,8 +88,8 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-export function downloadMarkdown(filename: string, content: string): void {
-  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+/** Blob을 지정한 파일명으로 내려받기 */
+export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -98,4 +98,122 @@ export function downloadMarkdown(filename: string, content: string): void {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+export function downloadMarkdown(filename: string, content: string): void {
+  downloadBlob(
+    new Blob([content], { type: "text/markdown;charset=utf-8" }),
+    filename,
+  );
+}
+
+/** 파일명에 쓸 안전한 기본 이름 */
+export function safeBaseName(input: TeacherInput): string {
+  const raw = `grasps_${input.subject || "과제"}_${input.grade || ""}`;
+  const cleaned = raw.replace(/\s+/g, "").replace(/[^\p{L}\p{N}_-]/gu, "");
+  return cleaned || "grasps";
+}
+
+/**
+ * 브라우저 인쇄로 PDF 저장. 인쇄 대화상자에서 "PDF로 저장"을 선택.
+ * 한글 렌더·선택 가능 텍스트를 그대로 유지(라이브러리 불필요).
+ */
+export function printResult(name: string): void {
+  const prev = document.title;
+  document.title = name;
+  const restore = () => {
+    document.title = prev;
+    window.removeEventListener("afterprint", restore);
+  };
+  window.addEventListener("afterprint", restore);
+  setTimeout(restore, 2000);
+  window.print();
+}
+
+/** Stage 1 + GRASPS 결과를 .xlsx(개요·GRASPS·루브릭 3시트)로 저장 */
+export async function downloadXlsx(
+  input: TeacherInput,
+  stage1: Stage1Result,
+  task: GraspsTask,
+  filename: string,
+): Promise<void> {
+  const { default: writeXlsxFile } = await import("write-excel-file/browser");
+
+  type Cell = { value: string; type: StringConstructor; fontWeight?: "bold"; wrap?: boolean };
+  const cell = (value: string, bold = false): Cell => ({
+    value: value ?? "",
+    type: String,
+    ...(bold ? { fontWeight: "bold" as const } : {}),
+    wrap: true,
+  });
+  const kv = (k: string, v: string) => [cell(k, true), cell(v)];
+
+  // 시트 1 — 개요
+  const overview: Cell[][] = [
+    [cell("항목", true), cell("내용", true)],
+    kv("교과", input.subject || "-"),
+    kv("학년", input.grade || "-"),
+  ];
+  if (input.standardCode) overview.push(kv("성취기준 코드", input.standardCode));
+  overview.push(
+    kv("성취기준", input.standard || "-"),
+    kv("전이 목표", stage1.transferGoal),
+    ...stage1.understandings.map((u, i) => kv(`영속적 이해 ${i + 1}`, u)),
+    ...stage1.essentialQuestions.map((q, i) => kv(`본질적 질문 ${i + 1}`, q)),
+  );
+
+  // 시트 2 — GRASPS
+  const grasps: Cell[][] = [
+    [cell("요소", true), cell("내용", true)],
+    kv("G 목표", task.goal),
+    kv("R 역할", task.role),
+    kv("A 청중", task.audience),
+    kv("S 상황", task.situation),
+    kv("P 수행·산출물", task.performanceProduct),
+    kv("S 성공기준", task.standards),
+    [cell("학생용 안내문", true), cell(task.studentPrompt)],
+  ];
+  if (task.productOptions?.length) {
+    grasps.push(
+      ...task.productOptions.map((o, i) =>
+        kv(`산출물 대안 ${i + 1}`, `${o.format} — ${o.rationale}`),
+      ),
+    );
+  }
+
+  // 시트 3 — 루브릭 (준거 × 수준 격자)
+  const maxLevels = Math.max(...task.rubric.map((c) => c.levels.length), 0);
+  const labelSource =
+    task.rubric.find((c) => c.levels.length === maxLevels) ?? task.rubric[0];
+  const levelLabels = Array.from({ length: maxLevels }, (_, i) =>
+    labelSource?.levels[i]?.label ?? `수준 ${i + 1}`,
+  );
+  const rubric: Cell[][] = [
+    [cell("준거", true), cell("대응 이해", true), ...levelLabels.map((l) => cell(l, true))],
+    ...task.rubric.map((c) => [
+      cell(c.criterion),
+      cell(stage1.understandings[c.alignedUnderstandingIndex] ?? ""),
+      ...Array.from({ length: maxLevels }, (_, i) =>
+        cell(c.levels[i]?.descriptor ?? ""),
+      ),
+    ]),
+  ];
+
+  const blob = await writeXlsxFile(
+    [
+      { data: overview, sheet: "개요", columns: [{ width: 18 }, { width: 80 }] },
+      { data: grasps, sheet: "GRASPS", columns: [{ width: 18 }, { width: 90 }] },
+      {
+        data: rubric,
+        sheet: "루브릭",
+        columns: [
+          { width: 30 },
+          { width: 30 },
+          ...levelLabels.map(() => ({ width: 40 })),
+        ],
+      },
+    ] as never,
+    {},
+  ).toBlob();
+  downloadBlob(blob, filename);
 }
