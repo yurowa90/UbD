@@ -9,13 +9,23 @@ import {
   GRASPS_CANDIDATES_SCHEMA,
   GRASPS_FINAL_SCHEMA,
   STAGE1_SCHEMA,
+  VERIFY_SCHEMA,
   buildCandidatesSystem,
   buildCandidatesUser,
   buildFinalSystem,
   buildFinalUser,
   buildStage1System,
   buildStage1User,
+  buildVerifySystem,
+  buildVerifyUser,
 } from "./prompts";
+
+/** 자기검증 결과 — 교정된 최종본 + 수정 내역 */
+export interface VerifiedFinal {
+  final: GraspsFinal;
+  /** 자기검증에서 고친 점 (없으면 빈 배열) */
+  issues: string[];
+}
 
 export const DEFAULT_MODEL = "gemini-2.5-flash";
 
@@ -175,4 +185,43 @@ export async function generateGraspsFinal(
     );
   }
   return final;
+}
+
+/**
+ * Pass 2c — 자기검증 루프.
+ * 초안을 quality_checklist에 대조해 정렬·진짜성·수준을 점검하고,
+ * 문제가 있으면 그 부분만 교정한 최종본과 수정 내역을 돌려준다.
+ * 검증 호출이 실패해도 초안은 유효하므로, 초안을 그대로 반환한다(폴백).
+ */
+export async function verifyGraspsFinal(
+  input: TeacherInput,
+  stage1: Stage1Result,
+  selection: GraspsSelection,
+  draft: GraspsFinal,
+  apiKey: string,
+  model: string,
+  includeUdlOptions: boolean,
+): Promise<VerifiedFinal> {
+  try {
+    const result = await callGemini<{ issues: string[]; revised: GraspsFinal }>({
+      apiKey,
+      model,
+      system: buildVerifySystem(includeUdlOptions, input.achievementLevels),
+      user: buildVerifyUser(input, stage1, selection, draft),
+      schema: VERIFY_SCHEMA,
+    });
+    const revised = result.revised;
+    const valid =
+      revised &&
+      revised.studentPrompt &&
+      Array.isArray(revised.rubric) &&
+      revised.rubric.length > 0;
+    return {
+      final: valid ? revised : draft,
+      issues: Array.isArray(result.issues) ? result.issues : [],
+    };
+  } catch {
+    // 검증 실패는 치명적이지 않다 — 초안을 그대로 쓴다.
+    return { final: draft, issues: [] };
+  }
 }

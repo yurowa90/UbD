@@ -69,52 +69,71 @@ export const GRASPS_CANDIDATES_SCHEMA = {
   ],
 };
 
+/** Pass 2b 산출물의 속성 (final·verify 공용) */
+const FINAL_PROPS = {
+  studentPrompt: { type: "string" },
+  productOptions: {
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        format: { type: "string" },
+        rationale: { type: "string" },
+      },
+      required: ["format", "rationale"],
+      propertyOrdering: ["format", "rationale"],
+    },
+  },
+  rubric: {
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        criterion: { type: "string" },
+        alignedUnderstandingIndex: { type: "integer" },
+        levels: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              label: { type: "string" },
+              descriptor: { type: "string" },
+            },
+            required: ["label", "descriptor"],
+            propertyOrdering: ["label", "descriptor"],
+          },
+          minItems: 3,
+          maxItems: 5,
+        },
+      },
+      required: ["criterion", "alignedUnderstandingIndex", "levels"],
+      propertyOrdering: ["criterion", "alignedUnderstandingIndex", "levels"],
+    },
+  },
+};
+
 /** Pass 2b — 확정된 6요소에 정렬된 안내문·루브릭 */
 export const GRASPS_FINAL_SCHEMA = {
   type: "object",
-  properties: {
-    studentPrompt: { type: "string" },
-    productOptions: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          format: { type: "string" },
-          rationale: { type: "string" },
-        },
-        required: ["format", "rationale"],
-        propertyOrdering: ["format", "rationale"],
-      },
-    },
-    rubric: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          criterion: { type: "string" },
-          alignedUnderstandingIndex: { type: "integer" },
-          levels: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                label: { type: "string" },
-                descriptor: { type: "string" },
-              },
-              required: ["label", "descriptor"],
-              propertyOrdering: ["label", "descriptor"],
-            },
-            minItems: 3,
-            maxItems: 5,
-          },
-        },
-        required: ["criterion", "alignedUnderstandingIndex", "levels"],
-        propertyOrdering: ["criterion", "alignedUnderstandingIndex", "levels"],
-      },
-    },
-  },
+  properties: FINAL_PROPS,
   required: ["studentPrompt", "rubric"],
   propertyOrdering: ["studentPrompt", "productOptions", "rubric"],
+};
+
+/** Pass 2c — 자기검증: 수정 내역 + 교정된 최종본 */
+export const VERIFY_SCHEMA = {
+  type: "object",
+  properties: {
+    issues: { type: "array", items: { type: "string" } },
+    revised: {
+      type: "object",
+      properties: FINAL_PROPS,
+      required: ["studentPrompt", "rubric"],
+      propertyOrdering: ["studentPrompt", "productOptions", "rubric"],
+    },
+  },
+  required: ["issues", "revised"],
+  propertyOrdering: ["issues", "revised"],
 };
 
 const SHARED_ROLE = `당신은 백워드 설계(Understanding by Design)와 UDL에 정통한 교육과정 설계 전문가입니다. 대한민국 중등 과학 교사를 돕습니다. 모든 출력은 한국어로, 현직 교사가 즉시 쓸 수 있는 구체적 문장으로 작성합니다. 반드시 지정된 JSON 스키마에 맞춰 응답합니다.`;
@@ -291,4 +310,80 @@ ${stage1Block(stage1)}
 ${elements}${officialBlock}
 
 위 6요소를 통합한 학생용 안내문과, 위 이해에 정렬된 루브릭을 생성하십시오.`;
+}
+
+/* ── Pass 2c: 자기검증 루프 (생성물 → 체크리스트 대조 → 1회 자기수정) ── */
+
+export function buildVerifySystem(
+  includeUdlOptions: boolean,
+  levels?: AchievementLevels,
+): string {
+  const levelRule = levels
+    ? `- 루브릭 수준은 공식 성취수준 체계(${levels.system === 3 ? "A~C" : "A~E"})를 따르고 label이 정확히 그 문자인지, 각 수준이 공식 서술의 눈금에 맞는지 확인한다.`
+    : `- 루브릭이 준거마다 4개 수준이고, 수준 서술이 공허한 등급이 아니라 관찰 가능한 수행 차이인지 확인한다.`;
+  return `${SHARED_ROLE}
+
+당신은 이제 **엄격한 백워드 설계 검토자**입니다. 방금 생성된 GRASPS 수행과제 초안을 quality_checklist에 대조해 점검하고, 문제가 있으면 그 부분만 고쳐 최종본을 냅니다.
+
+<knowledge name="quality_checklist">
+${qualityChecklist}
+</knowledge>
+
+<knowledge name="grasps">
+${grasps}
+</knowledge>
+
+<knowledge name="six_facets">
+${sixFacets}
+</knowledge>
+
+점검 기준(핵심):
+- 정렬: rubric의 각 준거가 하나의 영속적 이해에 대응하고 alignedUnderstandingIndex가 정확한가. 모든 이해가 최소 1개 준거로 평가되는가.
+- 역추적: 각 준거가 확정된 performanceProduct/situation 진술에서 도출되는가. 근거 없는 준거는 없는가.
+- 진짜성: 역할·청중이 실제 수행을 바꾸는가. 장식용 역할·형식 점수는 없는가.
+${levelRule}
+- studentPrompt가 확정된 6요소를 왜곡 없이 통합하는가.
+${includeUdlOptions ? "- productOptions가 3개이고 모두 같은 이해를 같은 루브릭으로 평가 가능한가." : "- productOptions는 비어 있거나 없어야 한다."}
+
+규칙:
+- 문제가 없으면 issues는 빈 배열로 두고, revised에는 초안을 **그대로** 담는다(불필요한 재작성 금지).
+- 문제가 있으면 그 항목만 고쳐 revised에 담고, issues에 "무엇을 왜 고쳤는지"를 교사가 읽을 한국어 한 문장씩으로 적는다.
+- 6요소(goal·role·audience·situation·performanceProduct·standards)의 확정 내용은 바꾸지 않는다. 고칠 수 있는 것은 studentPrompt·productOptions·rubric뿐이다.`;
+}
+
+export function buildVerifyUser(
+  input: TeacherInput,
+  stage1: Stage1Result,
+  selection: GraspsSelection,
+  draft: unknown,
+): string {
+  const elements = (Object.keys(ELEMENT_LABELS) as (keyof GraspsSelection)[])
+    .map((k) => `- ${ELEMENT_LABELS[k]}: ${selection[k]}`)
+    .join("\n");
+  const lv = input.achievementLevels;
+  const officialBlock = lv
+    ? `
+
+=== 공식 성취수준 (${lv.system === 3 ? "A~C" : "A~E"}) — 루브릭 눈금의 근거 ===
+<official_levels>
+A: ${lv.A}
+B: ${lv.B}
+C: ${lv.C}${lv.system === 5 ? `\nD: ${lv.D}\nE: ${lv.E}` : ""}
+</official_levels>`
+    : "";
+
+  return `=== 교사가 확정한 Stage 1 ===
+
+${stage1Block(stage1)}
+
+=== 교사가 확정한 GRASPS 6요소 (바꾸지 말 것) ===
+
+${elements}${officialBlock}
+
+=== 점검할 초안 (studentPrompt·productOptions·rubric) ===
+<draft>
+${JSON.stringify(draft, null, 2)}
+</draft>
+
+위 초안을 점검하고, issues와 revised를 반환하십시오.`;
 }

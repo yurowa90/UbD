@@ -13,6 +13,7 @@ import {
   generateGraspsCandidates,
   generateGraspsFinal,
   generateStage1,
+  verifyGraspsFinal,
 } from "./lib/gemini";
 import { API_KEY_STORAGE, MODEL_STORAGE, storage } from "./lib/storage";
 import { copyToClipboard, downloadMarkdown, toMarkdown } from "./lib/export";
@@ -43,6 +44,7 @@ export default function App() {
   const [candidates, setCandidates] = useState<GraspsCandidates | null>(null);
   const [selection, setSelection] = useState<GraspsSelection | null>(null);
   const [task, setTask] = useState<GraspsTask | null>(null);
+  const [verifyNotes, setVerifyNotes] = useState<string[]>([]);
   const [udlOptions, setUdlOptions] = useState(false);
 
   const [apiKey, setApiKey] = useState(
@@ -115,10 +117,21 @@ export default function App() {
     setError(null);
     setBusy(true);
     try {
-      const final = await generateGraspsFinal(
+      // Pass 2b: 초안 생성
+      const draft = await generateGraspsFinal(
         input,
         stage1,
         sel,
+        apiKey,
+        model,
+        udlOptions,
+      );
+      // Pass 2c: 자기검증 → 교정본 + 수정 내역 (실패해도 초안으로 폴백)
+      const { final, issues } = await verifyGraspsFinal(
+        input,
+        stage1,
+        sel,
+        draft,
         apiKey,
         model,
         udlOptions,
@@ -129,6 +142,7 @@ export default function App() {
         productOptions: final.productOptions,
         rubric: final.rubric,
       });
+      setVerifyNotes(issues);
       setStep("result");
     } catch (e) {
       reportError(e);
@@ -163,6 +177,7 @@ export default function App() {
     setCandidates(null);
     setSelection(null);
     setTask(null);
+    setVerifyNotes([]);
     setError(null);
   }
 
@@ -294,6 +309,7 @@ export default function App() {
           <GraspsResult
             stage1={stage1}
             task={task}
+            verifyNotes={verifyNotes}
             busy={busy}
             onRegenerate={handleRegenerate}
             onReselect={() => setStep("candidates")}

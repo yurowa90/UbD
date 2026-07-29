@@ -5,6 +5,8 @@ import { markerFor } from "../lib/markers";
 interface Props {
   stage1: Stage1Result;
   task: GraspsTask;
+  /** 자기검증에서 고친 점 (없으면 빈 배열 = 점검 통과) */
+  verifyNotes: string[];
   busy: boolean;
   onRegenerate: () => void;
   onReselect: () => void;
@@ -29,6 +31,7 @@ const GRASPS_ROWS: {
 export default function GraspsResult({
   stage1,
   task,
+  verifyNotes,
   busy,
   onRegenerate,
   onReselect,
@@ -83,6 +86,46 @@ export default function GraspsResult({
           </button>
         </div>
       </div>
+
+      {/* 자기검증 결과 */}
+      <section
+        className={[
+          "mb-6 rounded-xl border px-4 py-3",
+          verifyNotes.length > 0
+            ? "border-thread/30 bg-thread-soft/30"
+            : "border-emerald-300/60 bg-emerald-50/60",
+        ].join(" ")}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className={[
+              "flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold text-white",
+              verifyNotes.length > 0 ? "bg-thread" : "bg-emerald-500",
+            ].join(" ")}
+            aria-hidden
+          >
+            ✓
+          </span>
+          <h3 className="text-sm font-bold text-ink">
+            자기검증{" "}
+            <span className="font-normal text-ink-soft">
+              (생성 → quality_checklist 대조 → 1회 자기수정)
+            </span>
+          </h3>
+        </div>
+        {verifyNotes.length > 0 ? (
+          <ul className="mt-2 list-disc space-y-1 pl-8 text-sm leading-relaxed text-ink">
+            {verifyNotes.map((note, i) => (
+              <li key={i}>{note}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 pl-8 text-sm text-ink-soft">
+            정렬·진짜성·수준 서술 점검을 통과했습니다. 수정할 항목이
+            없었습니다.
+          </p>
+        )}
+      </section>
 
       {/* GRASPS 6요소 카드 */}
       <section>
