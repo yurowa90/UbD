@@ -33,6 +33,25 @@ npm run build    # tsc 타입체크 + 정적 빌드 → dist/
 
 앱을 열고 우상단 **API 키 설정**에서 [Google AI Studio](https://aistudio.google.com/app/apikey) 키를 등록하세요.
 
+## 배포 (Vercel)
+
+백엔드가 없는 정적 앱이라 Vercel의 GitHub 연동만으로 배포됩니다. `vercel.json`에 프레임워크(vite)·빌드·출력·SPA 리라이트가 명시돼 있어 추가 설정이 필요 없습니다.
+
+**최초 1회 연결** (Vercel 계정 인증이 필요하므로 저장소 소유자가 직접 수행):
+
+1. [vercel.com/new](https://vercel.com/new) → **Import Git Repository** → `yurowa90/UbD` 선택.
+2. Framework Preset이 **Vite**로 자동 인식됩니다(Build: `npm run build`, Output: `dist`). 그대로 **Deploy**.
+3. 환경 변수는 없습니다 — Gemini 키는 각 사용자가 브라우저에서 직접 등록하는 **BYOK**라 서버에 아무 비밀도 두지 않습니다.
+
+연결 후에는 `main`에 푸시할 때마다 자동 재배포되고, 다른 브랜치·PR은 미리보기 URL이 생성됩니다.
+
+> CLI로 배포하려면 로컬에서 `npx vercel`(최초) → `npx vercel --prod`. 토큰 기반 무인 배포는 `npx vercel --prod --token=$VERCEL_TOKEN`.
+
+### 확인 사항
+
+- `public/science_standards.json`(≈503KB, gzip 69KB)은 출력 루트에 정적 파일로 서빙되며, SPA 리라이트는 확장자 없는 경로에만 적용되어 이 파일 fetch를 가로채지 않습니다.
+- 아웃바운드는 브라우저 → Google Generative Language API 직접 호출뿐입니다.
+
 ## 구조
 
 ```
