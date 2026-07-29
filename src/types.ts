@@ -52,14 +52,21 @@ export interface Stage1Result {
   essentialQuestions: string[];
 }
 
-/** 루브릭 준거 하나 — Stage 1 이해와 1:1 대응 */
-export interface RubricCriterion {
+/** 어디서 도출된 준거인지 — 감사 대상 (전부 genre_convention이면 Stage 1을 못 잼) */
+export type CriterionSource = "stage1_understanding" | "genre_convention";
+
+/** 루브릭 준거 하나 */
+export interface Criterion {
   /** 평가 준거 이름 */
-  criterion: string;
-  /** 이 준거가 대응하는 영속적 이해의 인덱스 (understandings 배열 기준) */
-  alignedUnderstandingIndex: number;
-  /** 4개 성취수준 서술어 (상위→하위) */
-  levels: { label: string; descriptor: string }[];
+  label: string;
+  /** 이 준거가 무엇을 재는지 서술 */
+  descriptor: string;
+  /** 도출 출처 */
+  source: CriterionSource;
+  /** stage1_understanding일 때 대응 이해 인덱스 (정렬 마커·감사용) */
+  alignedUnderstandingIndex?: number;
+  /** 성취수준 서술 (상위→하위, 3~5수준). 공식 A~E 연동 시 사용 */
+  levels?: { label: string; descriptor: string }[];
 }
 
 /** UDL 기반 산출물 대안 하나 */
@@ -71,53 +78,76 @@ export interface ProductOption {
 }
 
 /**
- * Pass 2 산출물 — Stage 2 GRASPS 수행과제.
- * 원문(W&M 2005 제7장) 표기 주의:
- *  - P는 Product/Performance/Purpose로 혼용된다 → 내부 키를 performanceProduct
- *    하나로 통일하고 UI 라벨만 "수행·산출물"로 병기한다.
- *  - S는 Situation과 Standards 두 곳에 쓰이므로 필드를 분리해 둔다.
+ * GRASPS 요소 키 = 의존 그래프 노드.
+ * P는 Product/Performance/Purpose로 혼용되므로 내부 키는 product 하나로
+ * 통일하고 UI 라벨만 "수행·산출물"로 병기한다. S는 Situation·Standards
+ * 두 곳에 쓰이므로 situation·standards로 분리한다.
  */
-export interface GraspsTask {
-  goal: string;
-  role: string;
-  audience: string;
-  situation: string;
-  /** P — Product/Performance/Purpose (수행·산출물) */
-  performanceProduct: string;
-  standards: string;
-  /** 학생에게 그대로 제시할 수 있는 통합 서술형 과제 안내문 */
-  studentPrompt: string;
-  /** UDL 행동·표현 다양화: P의 복수 옵션 (선택 생성) */
-  productOptions?: ProductOption[];
-  rubric: RubricCriterion[];
-}
-
-/** GRASPS 6요소 키 (P/S 표기 통일 기준) */
-export type GraspsElementKey =
-  | "goal"
+export type ElementKey =
   | "role"
   | "audience"
   | "situation"
-  | "performanceProduct"
+  | "goal"
+  | "product"
   | "standards";
 
+export type ElementState = "generated" | "locked" | "stale";
+
+/** 청중 근접성 축 — 3개 번들을 이 축으로 강제 분산 */
+export type AudienceProximity =
+  | "classroom"
+  | "school_community"
+  | "expert_public";
+
 /**
- * Pass 2a 산출물 — 요소별 후보 문장(각 2~3개).
- * 원문 Figure 7.7이 요소마다 복수의 문장 틀을 제공하는 설계를 반영한다
- * (W&M 2005 §3): 생성기가 후보를 내고 교사가 하나를 고른다.
+ * 내적으로 정합한 GRASPS 완성 세트(번들) — 1급 객체.
+ * 슬롯별 독립 생성 대신 이 번들을 생성 단위로 삼는다.
+ * Role↔Audience↔Situation은 결합 다발로 동시 생성되고,
+ * Goal(R+S)·Product(A+S)·Standards(Stage1+Product 장르)는 파생된다.
  */
-export type GraspsCandidates = Record<GraspsElementKey, string[]>;
-
-/** 교사가 요소별로 확정한 6요소 */
-export type GraspsSelection = Record<GraspsElementKey, string>;
-
-/** Pass 2b 산출물 — 확정된 6요소에 정렬된 안내문·루브릭 */
-export interface GraspsFinal {
-  /** 학생에게 그대로 제시할 수 있는 통합 서술형 과제 안내문 */
+export interface GraspsBundle {
+  id: string;
+  /** 이 번들의 설계 논리 한 줄 — 먼저 정하고 그로부터 요소를 도출 */
+  designLogic: string;
+  axis: AudienceProximity;
+  role: string;
+  audience: string;
+  situation: string;
+  goal: string;
+  /** P — Product/Performance/Purpose (수행·산출물) */
+  product: string;
+  standards: Criterion[];
+  /** 파생: 6요소를 통합한 학생용 안내문 */
   studentPrompt: string;
-  /** UDL 행동·표현 다양화: P의 복수 옵션 (선택 생성) */
+  /** 파생: UDL 산출물 대안 (선택) */
   productOptions?: ProductOption[];
-  rubric: RubricCriterion[];
+  /** 요소별 상태 */
+  state: Record<ElementKey, ElementState>;
 }
 
-export type WizardStep = "input" | "stage1" | "candidates" | "result";
+/** 정합성 감사 — 검사 항목 키 */
+export type AuditCheckKey =
+  | "ra_reach"
+  | "rg_authority"
+  | "ap_receivability"
+  | "s_coherence"
+  | "construct_irrelevant"
+  | "construct_underrep";
+
+export interface AuditCheck {
+  key: AuditCheckKey;
+  /** 사람이 읽는 검사 이름 */
+  label: string;
+  /** 관련 요소쌍 표기 (예: "R–A") */
+  pair: string;
+  passed: boolean;
+  /** 통과/실패 이유 문장 */
+  explanation: string;
+}
+
+export interface BundleAudit {
+  checks: AuditCheck[];
+  passed: boolean;
+}
+
+export type WizardStep = "input" | "stage1" | "bundles" | "refine";

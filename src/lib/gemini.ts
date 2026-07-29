@@ -1,31 +1,40 @@
 import type {
-  GraspsCandidates,
-  GraspsFinal,
-  GraspsSelection,
+  AudienceProximity,
+  AuditCheck,
+  AuditCheckKey,
+  BundleAudit,
+  Criterion,
+  ElementKey,
+  GraspsBundle,
+  ProductOption,
   Stage1Result,
   TeacherInput,
 } from "../types";
 import {
-  GRASPS_CANDIDATES_SCHEMA,
-  GRASPS_FINAL_SCHEMA,
+  AUDIT_SCHEMA,
+  BUNDLES_SCHEMA,
   STAGE1_SCHEMA,
-  VERIFY_SCHEMA,
-  buildCandidatesSystem,
-  buildCandidatesUser,
-  buildFinalSystem,
-  buildFinalUser,
+  buildAuditSystem,
+  buildAuditUser,
+  buildBundlesSystem,
+  buildBundlesUser,
+  buildRegenElementSystem,
+  buildRegenElementUser,
   buildStage1System,
   buildStage1User,
-  buildVerifySystem,
-  buildVerifyUser,
+  regenElementSchema,
 } from "./prompts";
+import { freshState, markStale } from "./bundle";
 
-/** 자기검증 결과 — 교정된 최종본 + 수정 내역 */
-export interface VerifiedFinal {
-  final: GraspsFinal;
-  /** 자기검증에서 고친 점 (없으면 빈 배열) */
-  issues: string[];
-}
+/** 감사 항목의 사람이 읽는 이름·쌍 표기 (모델은 key만 반환) */
+const AUDIT_META: Record<AuditCheckKey, { label: string; pair: string }> = {
+  ra_reach: { label: "역할 → 청중 도달 가능성", pair: "R–A" },
+  rg_authority: { label: "역할의 목표 추구 권한", pair: "R–G" },
+  ap_receivability: { label: "청중의 산출물 수신 가능성", pair: "A–P" },
+  s_coherence: { label: "상황 – 역할·청중 정합", pair: "S–R/A" },
+  construct_irrelevant: { label: "구인 무관 변량", pair: "타당도" },
+  construct_underrep: { label: "구인 과소대표", pair: "타당도" },
+};
 
 export const DEFAULT_MODEL = "gemini-2.5-flash";
 
@@ -198,81 +207,162 @@ export async function generateStage1(
   });
 }
 
-/** Pass 2a — 6요소 각각의 후보(2~3개)를 생성 */
-export async function generateGraspsCandidates(
-  input: TeacherInput,
-  stage1: Stage1Result,
-  apiKey: string,
-  model: string,
-): Promise<GraspsCandidates> {
-  return callGemini<GraspsCandidates>({
-    apiKey,
-    model,
-    system: buildCandidatesSystem(),
-    user: buildCandidatesUser(input, stage1),
-    schema: GRASPS_CANDIDATES_SCHEMA,
-  });
+/** 모델이 반환하는 번들 본문 (id·state는 클라이언트가 부여) */
+interface BundleContent {
+  designLogic: string;
+  axis: AudienceProximity;
+  role: string;
+  audience: string;
+  situation: string;
+  goal: string;
+  product: string;
+  studentPrompt: string;
+  standards: Criterion[];
+  productOptions?: ProductOption[];
 }
 
-/** Pass 2b — 확정된 6요소로 학생 안내문·루브릭을 생성 */
-export async function generateGraspsFinal(
-  input: TeacherInput,
-  stage1: Stage1Result,
-  selection: GraspsSelection,
-  apiKey: string,
-  model: string,
-  includeUdlOptions: boolean,
-): Promise<GraspsFinal> {
-  const final = await callGemini<GraspsFinal>({
-    apiKey,
-    model,
-    system: buildFinalSystem(includeUdlOptions, input.achievementLevels),
-    user: buildFinalUser(input, stage1, selection),
-    schema: GRASPS_FINAL_SCHEMA,
-  });
-  if (!final.studentPrompt || !Array.isArray(final.rubric) || final.rubric.length === 0) {
-    throw new GeminiError(
-      "안내문·루브릭 생성이 불완전합니다. 다시 시도해 주세요.",
-    );
-  }
-  return final;
+function toBundles(list: BundleContent[]): GraspsBundle[] {
+  return list.map((b, i) => ({
+    id: String(i),
+    designLogic: b.designLogic,
+    axis: b.axis,
+    role: b.role,
+    audience: b.audience,
+    situation: b.situation,
+    goal: b.goal,
+    product: b.product,
+    standards: Array.isArray(b.standards) ? b.standards : [],
+    studentPrompt: b.studentPrompt,
+    productOptions: b.productOptions,
+    state: freshState(),
+  }));
 }
 
 /**
- * Pass 2c — 자기검증 루프.
- * 초안을 quality_checklist에 대조해 정렬·진짜성·수준을 점검하고,
- * 문제가 있으면 그 부분만 교정한 최종본과 수정 내역을 돌려준다.
- * 검증 호출이 실패해도 초안은 유효하므로, 초안을 그대로 반환한다(폴백).
+ * 내적으로 정합한 GRASPS 번들 3개를 일괄 생성.
+ * axis 상이 + 각 번들에 stage1_understanding 준거 존재를 검증하고,
+ * 미달이면 1회 재생성한다.
  */
-export async function verifyGraspsFinal(
+export async function generateBundles(
   input: TeacherInput,
   stage1: Stage1Result,
-  selection: GraspsSelection,
-  draft: GraspsFinal,
   apiKey: string,
   model: string,
   includeUdlOptions: boolean,
-): Promise<VerifiedFinal> {
-  try {
-    const result = await callGemini<{ issues: string[]; revised: GraspsFinal }>({
+): Promise<GraspsBundle[]> {
+  let last: BundleContent[] | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await callGemini<{ bundles: BundleContent[] }>({
       apiKey,
       model,
-      system: buildVerifySystem(includeUdlOptions, input.achievementLevels),
-      user: buildVerifyUser(input, stage1, selection, draft),
-      schema: VERIFY_SCHEMA,
+      system: buildBundlesSystem(includeUdlOptions, input.achievementLevels),
+      user: buildBundlesUser(input, stage1),
+      schema: BUNDLES_SCHEMA,
     });
-    const revised = result.revised;
-    const valid =
-      revised &&
-      revised.studentPrompt &&
-      Array.isArray(revised.rubric) &&
-      revised.rubric.length > 0;
+    const bundles = Array.isArray(res.bundles) ? res.bundles : [];
+    last = bundles;
+    const distinctAxes =
+      bundles.length === 3 && new Set(bundles.map((b) => b.axis)).size === 3;
+    const eachHasStage1 = bundles.every((b) =>
+      (b.standards ?? []).some((c) => c.source === "stage1_understanding"),
+    );
+    if (distinctAxes && eachHasStage1) return toBundles(bundles);
+  }
+  if (last && last.length === 3 && new Set(last.map((b) => b.axis)).size === 3) {
+    return toBundles(last);
+  }
+  throw new GeminiError(
+    "서로 다른 축의 정합한 번들 3개를 만들지 못했습니다. 다시 시도해 주세요.",
+  );
+}
+
+/**
+ * 대상 요소 하나만 재생성. 잠긴 형제 요소 + Stage 1을 프롬프트에 넣고
+ * (그 사실을 콘솔에 남긴다), 반환 시 후손 노드를 stale로 표시한다.
+ */
+export async function regenerateElement(
+  bundle: GraspsBundle,
+  target: ElementKey,
+  opts: { exclude: string[] },
+  input: TeacherInput,
+  stage1: Stage1Result,
+  apiKey: string,
+  model: string,
+  includeUdlOptions: boolean,
+): Promise<GraspsBundle> {
+  const system = buildRegenElementSystem(
+    target,
+    includeUdlOptions,
+    input.achievementLevels,
+  );
+  const user = buildRegenElementUser(input, stage1, bundle, target, opts.exclude);
+  // 잠긴 형제 요소 + Stage 1이 프롬프트에 포함됨을 로그로 확인 가능하게.
+  console.debug(
+    `[regenerateElement] target=${target}\n--- 주입 컨텍스트(잠긴 형제 + Stage 1) ---\n${user}`,
+  );
+  const schema = regenElementSchema(target);
+
+  if (target === "standards") {
+    const res = await callGemini<{
+      standards: Criterion[];
+      studentPrompt: string;
+    }>({ apiKey, model, system, user, schema });
+    const patched: GraspsBundle = {
+      ...bundle,
+      standards: Array.isArray(res.standards) ? res.standards : bundle.standards,
+      studentPrompt: res.studentPrompt || bundle.studentPrompt,
+    };
+    return markStale(patched, target);
+  }
+
+  const res = await callGemini<{
+    value: string;
+    studentPrompt: string;
+    productOptions?: ProductOption[];
+  }>({ apiKey, model, system, user, schema });
+  const patched: GraspsBundle = {
+    ...bundle,
+    studentPrompt: res.studentPrompt || bundle.studentPrompt,
+  };
+  (patched as unknown as Record<string, unknown>)[target] = res.value;
+  if (target === "product" && res.productOptions) {
+    patched.productOptions = res.productOptions;
+  }
+  return markStale(patched, target);
+}
+
+/**
+ * 정합성 감사 — 별도 검증 호출. 6개 검사를 개별 항목으로 반환한다.
+ * 감사 호출 자체가 실패하면 빈 통과로 폴백(내보내기 차단은 stale·타당도 게이트가 담당).
+ */
+export async function auditBundle(
+  stage1: Stage1Result,
+  bundle: GraspsBundle,
+  apiKey: string,
+  model: string,
+): Promise<BundleAudit> {
+  try {
+    const res = await callGemini<{
+      checks: { key: AuditCheckKey; passed: boolean; explanation: string }[];
+    }>({
+      apiKey,
+      model,
+      system: buildAuditSystem(),
+      user: buildAuditUser(stage1, bundle),
+      schema: AUDIT_SCHEMA,
+    });
+    const checks: AuditCheck[] = (res.checks ?? []).map((c) => ({
+      key: c.key,
+      label: AUDIT_META[c.key]?.label ?? c.key,
+      pair: AUDIT_META[c.key]?.pair ?? "",
+      passed: !!c.passed,
+      explanation: c.explanation,
+    }));
     return {
-      final: valid ? revised : draft,
-      issues: Array.isArray(result.issues) ? result.issues : [],
+      checks,
+      passed: checks.length > 0 && checks.every((c) => c.passed),
     };
   } catch {
-    // 검증 실패는 치명적이지 않다 — 초안을 그대로 쓴다.
-    return { final: draft, issues: [] };
+    return { checks: [], passed: true };
   }
 }

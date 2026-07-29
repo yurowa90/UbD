@@ -1,6 +1,7 @@
 import type {
   AchievementLevels,
-  GraspsSelection,
+  ElementKey,
+  GraspsBundle,
   Stage1Result,
   TeacherInput,
 } from "../types";
@@ -33,107 +34,181 @@ export const STAGE1_SCHEMA = {
   propertyOrdering: ["transferGoal", "understandings", "essentialQuestions"],
 };
 
-const candidateArray = {
+const levelsSchema = {
   type: "array",
-  items: { type: "string" },
-  minItems: 2,
-  maxItems: 3,
+  items: {
+    type: "object",
+    properties: { label: { type: "string" }, descriptor: { type: "string" } },
+    required: ["label", "descriptor"],
+    propertyOrdering: ["label", "descriptor"],
+  },
+  minItems: 3,
+  maxItems: 5,
 };
 
-/** Pass 2a — 요소별 후보(각 2~3개) */
-export const GRASPS_CANDIDATES_SCHEMA = {
+const criterionSchema = {
   type: "object",
   properties: {
-    goal: candidateArray,
-    role: candidateArray,
-    audience: candidateArray,
-    situation: candidateArray,
-    performanceProduct: candidateArray,
-    standards: candidateArray,
+    label: { type: "string" },
+    source: {
+      type: "string",
+      enum: ["stage1_understanding", "genre_convention"],
+    },
+    alignedUnderstandingIndex: { type: "integer" },
+    descriptor: { type: "string" },
+    levels: levelsSchema,
   },
-  required: [
-    "goal",
-    "role",
-    "audience",
-    "situation",
-    "performanceProduct",
-    "standards",
-  ],
+  required: ["label", "descriptor", "source"],
   propertyOrdering: [
-    "goal",
-    "role",
-    "audience",
-    "situation",
-    "performanceProduct",
-    "standards",
+    "label",
+    "source",
+    "alignedUnderstandingIndex",
+    "descriptor",
+    "levels",
   ],
 };
 
-/** Pass 2b 산출물의 속성 (final·verify 공용) */
-const FINAL_PROPS = {
+const standardsSchema = {
+  type: "array",
+  items: criterionSchema,
+  minItems: 2,
+  maxItems: 5,
+};
+
+const productOptionsSchema = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: {
+      format: { type: "string" },
+      rationale: { type: "string" },
+    },
+    required: ["format", "rationale"],
+    propertyOrdering: ["format", "rationale"],
+  },
+};
+
+const bundleContentProps = {
+  designLogic: { type: "string" },
+  axis: {
+    type: "string",
+    enum: ["classroom", "school_community", "expert_public"],
+  },
+  role: { type: "string" },
+  audience: { type: "string" },
+  situation: { type: "string" },
+  goal: { type: "string" },
+  product: { type: "string" },
   studentPrompt: { type: "string" },
-  productOptions: {
-    type: "array",
-    items: {
-      type: "object",
-      properties: {
-        format: { type: "string" },
-        rationale: { type: "string" },
-      },
-      required: ["format", "rationale"],
-      propertyOrdering: ["format", "rationale"],
-    },
-  },
-  rubric: {
-    type: "array",
-    items: {
-      type: "object",
-      properties: {
-        criterion: { type: "string" },
-        alignedUnderstandingIndex: { type: "integer" },
-        levels: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              label: { type: "string" },
-              descriptor: { type: "string" },
-            },
-            required: ["label", "descriptor"],
-            propertyOrdering: ["label", "descriptor"],
-          },
-          minItems: 3,
-          maxItems: 5,
-        },
-      },
-      required: ["criterion", "alignedUnderstandingIndex", "levels"],
-      propertyOrdering: ["criterion", "alignedUnderstandingIndex", "levels"],
-    },
-  },
+  standards: standardsSchema,
+  productOptions: productOptionsSchema,
 };
 
-/** Pass 2b — 확정된 6요소에 정렬된 안내문·루브릭 */
-export const GRASPS_FINAL_SCHEMA = {
-  type: "object",
-  properties: FINAL_PROPS,
-  required: ["studentPrompt", "rubric"],
-  propertyOrdering: ["studentPrompt", "productOptions", "rubric"],
-};
+const bundleContentOrder = [
+  "designLogic",
+  "axis",
+  "role",
+  "audience",
+  "situation",
+  "goal",
+  "product",
+  "studentPrompt",
+  "standards",
+  "productOptions",
+];
 
-/** Pass 2c — 자기검증: 수정 내역 + 교정된 최종본 */
-export const VERIFY_SCHEMA = {
+/** 번들 3개 일괄 생성 — designLogic을 먼저 두어 "논리 → 요소 도출"을 강제 */
+export const BUNDLES_SCHEMA = {
   type: "object",
   properties: {
-    issues: { type: "array", items: { type: "string" } },
-    revised: {
-      type: "object",
-      properties: FINAL_PROPS,
-      required: ["studentPrompt", "rubric"],
-      propertyOrdering: ["studentPrompt", "productOptions", "rubric"],
+    bundles: {
+      type: "array",
+      minItems: 3,
+      maxItems: 3,
+      items: {
+        type: "object",
+        properties: bundleContentProps,
+        required: [
+          "designLogic",
+          "axis",
+          "role",
+          "audience",
+          "situation",
+          "goal",
+          "product",
+          "studentPrompt",
+          "standards",
+        ],
+        propertyOrdering: bundleContentOrder,
+      },
     },
   },
-  required: ["issues", "revised"],
-  propertyOrdering: ["issues", "revised"],
+  required: ["bundles"],
+  propertyOrdering: ["bundles"],
+};
+
+/** 대상 요소 하나를 재생성 — studentPrompt(+product 시 UDL 옵션)도 함께 갱신 */
+export function regenElementSchema(target: ElementKey): object {
+  if (target === "standards") {
+    return {
+      type: "object",
+      properties: {
+        standards: standardsSchema,
+        studentPrompt: { type: "string" },
+      },
+      required: ["standards", "studentPrompt"],
+      propertyOrdering: ["standards", "studentPrompt"],
+    };
+  }
+  const properties: Record<string, unknown> = {
+    value: { type: "string" },
+    studentPrompt: { type: "string" },
+  };
+  const ordering = ["value", "studentPrompt"];
+  if (target === "product") {
+    properties.productOptions = productOptionsSchema;
+    ordering.push("productOptions");
+  }
+  return {
+    type: "object",
+    properties,
+    required: ["value", "studentPrompt"],
+    propertyOrdering: ordering,
+  };
+}
+
+/** 정합성 감사 — 6개 검사를 개별 항목으로 (label·pair는 클라이언트에서 부여) */
+export const AUDIT_SCHEMA = {
+  type: "object",
+  properties: {
+    checks: {
+      type: "array",
+      minItems: 6,
+      maxItems: 6,
+      items: {
+        type: "object",
+        properties: {
+          key: {
+            type: "string",
+            enum: [
+              "ra_reach",
+              "rg_authority",
+              "ap_receivability",
+              "s_coherence",
+              "construct_irrelevant",
+              "construct_underrep",
+            ],
+          },
+          passed: { type: "boolean" },
+          explanation: { type: "string" },
+        },
+        required: ["key", "passed", "explanation"],
+        propertyOrdering: ["key", "passed", "explanation"],
+      },
+    },
+  },
+  required: ["checks"],
+  propertyOrdering: ["checks"],
 };
 
 const SHARED_ROLE = `당신은 백워드 설계(Understanding by Design)와 UDL에 정통한 교육과정 설계 전문가입니다. 대한민국 중등 과학 교사를 돕습니다. 모든 출력은 한국어로, 현직 교사가 즉시 쓸 수 있는 구체적 문장으로 작성합니다. 반드시 지정된 JSON 스키마에 맞춰 응답합니다.`;
@@ -183,151 +258,71 @@ ${understandings}
 ${questions}`;
 }
 
-/* ── Pass 2a: 요소별 후보 생성 ──────────────────────────── */
-
-export function buildCandidatesSystem(): string {
-  return `${SHARED_ROLE}
-
-당신의 임무는 **교사가 확정한 Stage 1 요소**를 평가할 GRASPS 수행과제를 위해, 6요소(goal·role·audience·situation·performanceProduct·standards) 각각에 대해 **서로 뚜렷이 다른 후보 문장 2~3개**를 제안하는 것입니다. 아직 학생용 안내문이나 루브릭은 만들지 마십시오 — 교사가 요소별로 하나를 고른 뒤 다음 단계에서 생성됩니다.
-
-다음 지식을 근거로 삼으십시오. 특히 grasps.md의 Figure 7.7 문장 틀을 요소별로 활용하십시오.
-
-<knowledge name="grasps">
-${grasps}
-</knowledge>
-
-<knowledge name="six_facets">
-${sixFacets}
-</knowledge>
-
-제약:
-- 각 요소마다 후보 2~3개. 후보끼리는 **표현만 바꾼 동어반복이 아니라 실제로 다른 선택지**여야 합니다(다른 역할·청중·상황·산출물 형태 등).
-- 모든 후보가 성취기준이 아니라 **Stage 1의 전이 목표·영속적 이해**에서 도출되어야 합니다.
-- role·audience는 학생의 실제 수행을 바꾸는 진짜성 있는 것으로. 장식용 역할("당신은 장관입니다")을 금지합니다.
-- standards 후보는 이후 루브릭 준거의 씨앗입니다. 겨냥한 이해에 적절한 '이해의 여섯 측면'을 반영하되, performanceProduct·situation에서 역추적 가능한 성공 기준으로 진술합니다.
-- 각 후보는 한국어 완전한 문장으로, 교사가 그대로 고르거나 살짝 손봐 쓸 수 있는 수준으로 작성합니다.`;
-}
-
-export function buildCandidatesUser(
-  input: TeacherInput,
-  stage1: Stage1Result,
-): string {
-  return `교과: ${input.subject || "(미지정)"} / 학년: ${input.grade || "(미지정)"}
-${input.context ? `수업 맥락: ${input.context}\n` : ""}
-=== 교사가 확정한 Stage 1 ===
-
-${stage1Block(stage1)}
-
-위 이해를 드러내는 GRASPS 수행과제를 위해, 6요소 각각의 후보 문장을 생성하십시오.`;
-}
-
-/* ── Pass 2b: 확정된 6요소 → 안내문·루브릭 ──────────────── */
-
-export function buildFinalSystem(
-  includeUdlOptions: boolean,
-  levels?: AchievementLevels,
-): string {
-  const labels = levels
-    ? levels.system === 3
-      ? "A, B, C (3수준)"
-      : "A, B, C, D, E (5수준)"
-    : null;
-  const rubricLevelRule = labels
-    ? `- 이 성취기준에는 2022 개정 교육과정 공식 성취수준이 있습니다. 각 준거의 levels는 정확히 이 체계(${labels})를 따르고, label은 "${levels!.system === 3 ? "A/B/C" : "A/B/C/D/E"}"로 답니다. 각 수준 서술어는 아래 <official_levels>의 해당 수준 서술을 이 GRASPS 과제 맥락으로 구체화한 것이어야 합니다(원문 복사가 아니라 과제에 맞춘 재서술, 그러나 성취 눈금은 공식 수준에 맞출 것).`
-    : `- 각 준거의 levels는 정확히 4개 수준이며, "잘함/보통" 같은 공허한 등급이 아니라 관찰 가능한 수행 차이로 서술합니다.`;
-  return `${SHARED_ROLE}
-
-당신의 임무는 **교사가 요소별로 확정한 GRASPS 6요소**를 입력으로 받아, 그 6요소를 자연스럽게 통합한 학생용 과제 안내문과, Stage 1의 이해에 정렬된 루브릭을 생성하는 것입니다. **6요소 자체는 이미 확정되었으니 바꾸지 마십시오.**
-
-다음 지식을 근거로 삼으십시오.
-
-<knowledge name="grasps">
-${grasps}
-</knowledge>
-
-<knowledge name="six_facets">
-${sixFacets}
-</knowledge>
-
-<knowledge name="udl">
-${udl}
-</knowledge>
-
-<knowledge name="quality_checklist">
-${qualityChecklist}
-</knowledge>
-
-절대 제약(정렬이 이 도구의 존재 이유입니다):
-- rubric의 각 준거는 반드시 하나의 영속적 이해에 대응하며, alignedUnderstandingIndex에 그 이해의 0-기반 인덱스를 정확히 넣습니다.
-- 영속적 이해가 2개이므로 rubric 준거도 최소 2개(각 이해당 1개 이상)를 만들고, 모든 이해가 최소 1개 준거로 평가되게 합니다.
-${rubricLevelRule}
-- 겨냥한 이해에 적절한 '이해의 여섯 측면'(설명·해석·적용·관점·공감·자기지식)을 골라 루브릭 준거로 번역합니다. 모든 측면을 억지로 넣지 않습니다.
-- 각 루브릭 준거는 확정된 performanceProduct 또는 situation 진술의 어떤 구절에서 도출되었는지 역추적 가능해야 합니다(W&M 2005 Fig 7.7의 1:1 대응). 과제 진술에 근거가 없는 준거는 만들지 않습니다.
-- studentPrompt는 확정된 6요소를 자연스럽게 통합해 학생에게 그대로 제시할 수 있는 안내문으로 작성합니다.
-${includeUdlOptions ? "- productOptions에 UDL 기반 산출물 대안 3개를 넣습니다. 모든 옵션은 같은 영속적 이해를 증거로 요구하고 같은 루브릭으로 채점 가능해야 합니다." : "- productOptions는 생략합니다(빈 배열 또는 필드 없음)."}
-
-출력 전에 quality_checklist로 스스로 대조하고, 정렬이 깨진 부분이 있으면 그 부분만 수정한 뒤 최종본을 내십시오.`;
-}
-
-const ELEMENT_LABELS: Record<keyof GraspsSelection, string> = {
-  goal: "G 목표",
+const ELEMENT_LABEL: Record<ElementKey, string> = {
   role: "R 역할",
   audience: "A 청중",
   situation: "S 상황",
-  performanceProduct: "P 수행·산출물",
+  goal: "G 목표",
+  product: "P 수행·산출물",
   standards: "S 성공기준",
 };
 
-export function buildFinalUser(
-  input: TeacherInput,
-  stage1: Stage1Result,
-  selection: GraspsSelection,
-): string {
-  const elements = (Object.keys(ELEMENT_LABELS) as (keyof GraspsSelection)[])
-    .map((k) => `- ${ELEMENT_LABELS[k]}: ${selection[k]}`)
-    .join("\n");
-
-  const lv = input.achievementLevels;
-  const officialBlock = lv
-    ? `
+function officialLevelsBlock(lv?: AchievementLevels): string {
+  if (!lv) return "";
+  return `
 
 === 공식 성취수준 (${lv.system === 3 ? "A~C" : "A~E"}) — 루브릭 눈금의 근거 ===
 <official_levels>
 A: ${lv.A}
 B: ${lv.B}
 C: ${lv.C}${lv.system === 5 ? `\nD: ${lv.D}\nE: ${lv.E}` : ""}
-</official_levels>`
-    : "";
-
-  return `교과: ${input.subject || "(미지정)"} / 학년: ${input.grade || "(미지정)"}
-${input.context ? `수업 맥락: ${input.context}\n` : ""}
-=== 교사가 확정한 Stage 1 ===
-
-${stage1Block(stage1)}
-
-=== 교사가 확정한 GRASPS 6요소 (그대로 사용) ===
-
-${elements}${officialBlock}
-
-위 6요소를 통합한 학생용 안내문과, 위 이해에 정렬된 루브릭을 생성하십시오.`;
+</official_levels>`;
 }
 
-/* ── Pass 2c: 자기검증 루프 (생성물 → 체크리스트 대조 → 1회 자기수정) ── */
+function rubricLevelRule(levels?: AchievementLevels): string {
+  if (!levels) {
+    return `- standards의 각 준거 levels는 정확히 4개 수준이며, "잘함/보통" 같은 공허한 등급이 아니라 관찰 가능한 수행 차이로 서술합니다.`;
+  }
+  const labels = levels.system === 3 ? "A, B, C (3수준)" : "A, B, C, D, E (5수준)";
+  return `- 이 성취기준에는 공식 성취수준이 있습니다. standards 준거의 levels는 정확히 이 체계(${labels})를 따르고 label을 "${levels.system === 3 ? "A/B/C" : "A/B/C/D/E"}"로 답니다. 각 수준 서술어는 <official_levels>의 해당 수준을 이 과제 맥락으로 구체화하되 성취 눈금은 공식 수준에 맞춥니다.`;
+}
 
-export function buildVerifySystem(
+/** 번들의 6요소를 잠금 상태와 함께 텍스트로 (regen/audit 컨텍스트용) */
+function bundleBlock(bundle: GraspsBundle, withLocks: boolean): string {
+  const line = (k: ElementKey, value: string) => {
+    const mark = withLocks ? ` [${bundle.state[k]}]` : "";
+    return `- ${ELEMENT_LABEL[k]}${mark}: ${value}`;
+  };
+  const std = bundle.standards
+    .map(
+      (c) =>
+        `    · [${c.source}${
+          c.alignedUnderstandingIndex != null
+            ? `, 이해#${c.alignedUnderstandingIndex}`
+            : ""
+        }] ${c.label} — ${c.descriptor}`,
+    )
+    .join("\n");
+  return `설계 논리: ${bundle.designLogic}
+청중 근접성(axis): ${bundle.axis}
+${line("role", bundle.role)}
+${line("audience", bundle.audience)}
+${line("situation", bundle.situation)}
+${line("goal", bundle.goal)}
+${line("product", bundle.product)}
+- ${ELEMENT_LABEL.standards}${withLocks ? ` [${bundle.state.standards}]` : ""}:
+${std}`;
+}
+
+/* ── 번들 3개 일괄 생성 ─────────────────────────────────── */
+
+export function buildBundlesSystem(
   includeUdlOptions: boolean,
   levels?: AchievementLevels,
 ): string {
-  const levelRule = levels
-    ? `- 루브릭 수준은 공식 성취수준 체계(${levels.system === 3 ? "A~C" : "A~E"})를 따르고 label이 정확히 그 문자인지, 각 수준이 공식 서술의 눈금에 맞는지 확인한다.`
-    : `- 루브릭이 준거마다 4개 수준이고, 수준 서술이 공허한 등급이 아니라 관찰 가능한 수행 차이인지 확인한다.`;
   return `${SHARED_ROLE}
 
-당신은 이제 **엄격한 백워드 설계 검토자**입니다. 방금 생성된 GRASPS 수행과제 초안을 quality_checklist에 대조해 점검하고, 문제가 있으면 그 부분만 고쳐 최종본을 냅니다.
-
-<knowledge name="quality_checklist">
-${qualityChecklist}
-</knowledge>
+당신의 임무는 **교사가 확정한 Stage 1**을 평가할, **내적으로 정합한 GRASPS 완성 세트(번들)를 정확히 3개** 생성하는 것입니다. 슬롯별로 요소를 따로 뽑아 조합하지 마십시오 — 각 번들은 처음부터 하나의 정합한 세트여야 합니다.
 
 <knowledge name="grasps">
 ${grasps}
@@ -337,53 +332,130 @@ ${grasps}
 ${sixFacets}
 </knowledge>
 
-점검 기준(핵심):
-- 정렬: rubric의 각 준거가 하나의 영속적 이해에 대응하고 alignedUnderstandingIndex가 정확한가. 모든 이해가 최소 1개 준거로 평가되는가.
-- 역추적: 각 준거가 확정된 performanceProduct/situation 진술에서 도출되는가. 근거 없는 준거는 없는가.
-- 진짜성: 역할·청중이 실제 수행을 바꾸는가. 장식용 역할·형식 점수는 없는가.
-${levelRule}
-- studentPrompt가 확정된 6요소를 왜곡 없이 통합하는가.
-${includeUdlOptions ? "- productOptions가 3개이고 모두 같은 이해를 같은 루브릭으로 평가 가능한가." : "- productOptions는 비어 있거나 없어야 한다."}
+<knowledge name="quality_checklist">
+${qualityChecklist}
+</knowledge>
+${includeUdlOptions ? `\n<knowledge name="udl">\n${udl}\n</knowledge>\n` : ""}
+각 번들의 생성 규칙:
+- **먼저 designLogic(설계 논리 한 줄)을 정하고**, 그로부터 6요소를 도출합니다. 요소를 먼저 뽑고 논리를 나중에 요약하지 마십시오.
+- Role·Audience·Situation은 **한 다발로 동시에** 결정합니다. Goal은 Role+Situation에서, Product는 Audience+Situation에서, Standards는 Stage 1 이해 + Product 장르에서 파생합니다.
+- **쌍 정합성 필수**: (R–A) 그 역할이 그 청중에게 도달할 개연성, (R–G) 그 역할에 목표 추구 권한, (A–P) 그 청중이 실제 수신·소비하는 장르의 산출물, (S–R/A) 그 상황에서 역할·청중 공존. 하나라도 어기면 부정합입니다.
+- **타당도**: 이해가 없는 학생이 장르 요령만으로 Product를 잘 만들 수 있으면 안 됩니다(구인 무관 변량). 이해를 갖춘 학생이 그 이해를 드러낼 통로가 Product 안에 있어야 합니다(구인 과소대표).
+- standards: 최소 1개 준거의 source는 반드시 "stage1_understanding"이고 alignedUnderstandingIndex에 대응 이해의 0-기반 인덱스를 넣습니다. 장르 규범 준거는 source="genre_convention". 전부 genre_convention이면 실패입니다.
+${rubricLevelRule(levels)}
+- studentPrompt: 그 번들의 6요소를 자연스럽게 통합해 학생에게 그대로 제시할 안내문.
+${includeUdlOptions ? '- productOptions: 같은 이해를 여러 산출 형태로 드러내는 UDL 대안 3개(같은 루브릭으로 채점 가능).' : "- productOptions는 넣지 않습니다."}
 
-규칙:
-- 문제가 없으면 issues는 빈 배열로 두고, revised에는 초안을 **그대로** 담는다(불필요한 재작성 금지).
-- 문제가 있으면 그 항목만 고쳐 revised에 담고, issues에 "무엇을 왜 고쳤는지"를 교사가 읽을 한국어 한 문장씩으로 적는다.
-- 6요소(goal·role·audience·situation·performanceProduct·standards)의 확정 내용은 바꾸지 않는다. 고칠 수 있는 것은 studentPrompt·productOptions·rubric뿐이다.`;
+3개 번들 사이 규칙:
+- 세 번들의 **axis(classroom / school_community / expert_public)는 서로 달라야** 합니다. 청중 근접성으로 분산해 선택이 의미 있게 하십시오.
+- 세 designLogic은 서로 뚜렷이 다른 설계 논리여야 합니다(표현만 바꾼 변주 금지).`;
 }
 
-export function buildVerifyUser(
+export function buildBundlesUser(
   input: TeacherInput,
   stage1: Stage1Result,
-  selection: GraspsSelection,
-  draft: unknown,
 ): string {
-  const elements = (Object.keys(ELEMENT_LABELS) as (keyof GraspsSelection)[])
-    .map((k) => `- ${ELEMENT_LABELS[k]}: ${selection[k]}`)
-    .join("\n");
-  const lv = input.achievementLevels;
-  const officialBlock = lv
-    ? `
+  return `교과: ${input.subject || "(미지정)"} / 학년: ${input.grade || "(미지정)"}
+${input.context ? `수업 맥락: ${input.context}\n` : ""}
+=== 교사가 확정한 Stage 1 ===
 
-=== 공식 성취수준 (${lv.system === 3 ? "A~C" : "A~E"}) — 루브릭 눈금의 근거 ===
-<official_levels>
-A: ${lv.A}
-B: ${lv.B}
-C: ${lv.C}${lv.system === 5 ? `\nD: ${lv.D}\nE: ${lv.E}` : ""}
-</official_levels>`
-    : "";
+${stage1Block(stage1)}${officialLevelsBlock(input.achievementLevels)}
 
+위 이해를 평가할, 내적으로 정합한 GRASPS 번들 3개(axis 상이)를 생성하십시오.`;
+}
+
+/* ── 조건부 재생성 — 대상 요소 하나만 ──────────────────── */
+
+export function buildRegenElementSystem(
+  target: ElementKey,
+  includeUdlOptions: boolean,
+  levels?: AchievementLevels,
+): string {
+  const label = ELEMENT_LABEL[target];
+  return `${SHARED_ROLE}
+
+당신은 이미 만들어진 **정합한 GRASPS 번들에서 '${label}' 요소 하나만** 다시 생성합니다. 나머지 요소는 바꾸지 말고 반환하지도 마십시오.
+
+<knowledge name="grasps">
+${grasps}
+</knowledge>
+
+<knowledge name="quality_checklist">
+${qualityChecklist}
+</knowledge>
+${target === "product" && includeUdlOptions ? `\n<knowledge name="udl">\n${udl}\n</knowledge>\n` : ""}${target === "standards" ? `\n<knowledge name="six_facets">\n${sixFacets}\n</knowledge>\n` : ""}
+규칙:
+- 잠긴(locked) 형제 요소와 Stage 1을 **반드시 지키며 그에 정합**하도록 새 값을 냅니다. 쌍 정합성(R–A 도달, R–G 권한, A–P 수신, S–R/A 공존)을 유지하십시오.
+- 제시된 "제외할 값"(직전 값)은 다시 내지 않습니다. 표현만 바꾼 게 아니라 **실질적으로 다른** 선택지를 냅니다.
+- studentPrompt는 갱신된 요소를 반영해 다시 씁니다.
+${target === "standards" ? "- standards: 최소 1개 준거의 source는 stage1_understanding이고 alignedUnderstandingIndex를 정확히 넣습니다.\n" + rubricLevelRule(levels) : ""}${target === "product" && includeUdlOptions ? "- productOptions(UDL 대안 3개)도 갱신합니다." : ""}
+${target === "standards" ? "" : "- value에 '" + label + "'의 새 값(문장)을 담습니다."}`;
+}
+
+export function buildRegenElementUser(
+  input: TeacherInput,
+  stage1: Stage1Result,
+  bundle: GraspsBundle,
+  target: ElementKey,
+  exclude: string[],
+): string {
+  const label = ELEMENT_LABEL[target];
+  const excludeBlock =
+    exclude.length > 0
+      ? `\n\n제외할 값(다시 내지 말 것):\n${exclude.map((e) => `- ${e}`).join("\n")}`
+      : "";
+  const officialBlock =
+    target === "standards" ? officialLevelsBlock(input.achievementLevels) : "";
+  return `교과: ${input.subject || "(미지정)"} / 학년: ${input.grade || "(미지정)"}
+
+=== 교사가 확정한 Stage 1 ===
+
+${stage1Block(stage1)}
+
+=== 현재 번들 (locked 요소는 반드시 유지) ===
+
+${bundleBlock(bundle, true)}${officialBlock}${excludeBlock}
+
+'${label}' 요소만 다시 생성하고, 갱신된 studentPrompt와 함께 반환하십시오.`;
+}
+
+/* ── 정합성 감사 — 별도 검증 호출 ──────────────────────── */
+
+export function buildAuditSystem(): string {
+  return `${SHARED_ROLE}
+
+당신은 **GRASPS 정합성 감사자**입니다. 아래 quality_checklist의 §6 쌍 수준 검사와 §7 타당도 검사, 총 6개를 **각각 독립 항목**으로 수행합니다.
+
+<knowledge name="quality_checklist">
+${qualityChecklist}
+</knowledge>
+
+<knowledge name="grasps">
+${grasps}
+</knowledge>
+
+6개 검사(각 key에 대해 passed와 explanation을 반환):
+- ra_reach: 그 역할이 그 청중에게 실제로 도달할 개연성이 있는가.
+- rg_authority: 그 역할에 그 목표를 추구할 지위·권한이 있는가.
+- ap_receivability: 그 청중이 실제로 수신·소비하는 장르의 산출물인가.
+- s_coherence: 그 상황에서 그 역할과 청중이 함께 존재할 수 있는가.
+- construct_irrelevant: Stage 1 이해가 **없는** 학생이 장르 요령만으로 Product를 잘 만들 수 있으면 **passed=false**(구인 무관 변량).
+- construct_underrep: Stage 1 이해를 **갖춘** 학생이 그 이해를 드러낼 통로가 Product 안에 **없으면 passed=false**(구인 과소대표).
+
+explanation은 **어떤 쌍이 왜 통과/실패인지 한 문장**으로 구체적으로 씁니다(통과/실패 판정만 내지 말 것).`;
+}
+
+export function buildAuditUser(
+  stage1: Stage1Result,
+  bundle: GraspsBundle,
+): string {
   return `=== 교사가 확정한 Stage 1 ===
 
 ${stage1Block(stage1)}
 
-=== 교사가 확정한 GRASPS 6요소 (바꾸지 말 것) ===
+=== 감사할 GRASPS 번들 ===
 
-${elements}${officialBlock}
+${bundleBlock(bundle, false)}
 
-=== 점검할 초안 (studentPrompt·productOptions·rubric) ===
-<draft>
-${JSON.stringify(draft, null, 2)}
-</draft>
-
-위 초안을 점검하고, issues와 revised를 반환하십시오.`;
+위 6개 검사를 수행해 checks를 반환하십시오.`;
 }

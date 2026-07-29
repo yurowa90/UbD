@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type {
-  GraspsCandidates,
-  GraspsSelection,
-  GraspsTask,
+  BundleAudit,
+  ElementKey,
+  GraspsBundle,
   Stage1Result,
   TeacherInput,
   WizardStep,
@@ -10,10 +10,10 @@ import type {
 import {
   DEFAULT_MODEL,
   GeminiError,
-  generateGraspsCandidates,
-  generateGraspsFinal,
+  auditBundle,
+  generateBundles,
   generateStage1,
-  verifyGraspsFinal,
+  regenerateElement,
 } from "./lib/gemini";
 import { API_KEY_STORAGE, MODEL_STORAGE, storage } from "./lib/storage";
 import {
@@ -27,8 +27,8 @@ import {
 import ApiKeyModal from "./components/ApiKeyModal";
 import InputForm from "./components/InputForm";
 import Stage1Review from "./components/Stage1Review";
-import CandidateSelect from "./components/CandidateSelect";
-import GraspsResult from "./components/GraspsResult";
+import BundleCards from "./components/BundleCards";
+import BundleEditor from "./components/BundleEditor";
 
 const EMPTY_INPUT: TeacherInput = {
   subject: "",
@@ -40,18 +40,19 @@ const EMPTY_INPUT: TeacherInput = {
 const STEPS: { id: WizardStep; label: string; sub: string }[] = [
   { id: "input", label: "입력", sub: "성취기준" },
   { id: "stage1", label: "Stage 1 검토", sub: "이해 확정" },
-  { id: "candidates", label: "GRASPS 요소", sub: "후보 선택" },
-  { id: "result", label: "완성", sub: "안내문·루브릭" },
+  { id: "bundles", label: "번들 선택", sub: "정합 세트 3" },
+  { id: "refine", label: "완성", sub: "감사·내보내기" },
 ];
 
 export default function App() {
   const [step, setStep] = useState<WizardStep>("input");
   const [input, setInput] = useState<TeacherInput>(EMPTY_INPUT);
   const [stage1, setStage1] = useState<Stage1Result | null>(null);
-  const [candidates, setCandidates] = useState<GraspsCandidates | null>(null);
-  const [selection, setSelection] = useState<GraspsSelection | null>(null);
-  const [task, setTask] = useState<GraspsTask | null>(null);
-  const [verifyNotes, setVerifyNotes] = useState<string[]>([]);
+  const [bundles, setBundles] = useState<GraspsBundle[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [audit, setAudit] = useState<BundleAudit | null>(null);
+  const [auditing, setAuditing] = useState(false);
+  const [busyElement, setBusyElement] = useState<ElementKey | null>(null);
   const [udlOptions, setUdlOptions] = useState(false);
 
   const [apiKey, setApiKey] = useState(
@@ -66,6 +67,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
+  const selected = bundles.find((b) => b.id === selectedId) ?? null;
 
   function saveKey(key: string, m: string) {
     setApiKey(key);
@@ -96,20 +98,23 @@ export default function App() {
     }
   }
 
-  // Pass 2a: 확정된 Stage 1 → 요소별 후보
+  // Stage 1 확정 → 정합 번들 3개 생성
   async function handleStage1Confirm(confirmed: Stage1Result) {
     setStage1(confirmed);
     setError(null);
     setBusy(true);
     try {
-      const result = await generateGraspsCandidates(
+      const result = await generateBundles(
         input,
         confirmed,
         apiKey,
         model,
+        udlOptions,
       );
-      setCandidates(result);
-      setStep("candidates");
+      setBundles(result);
+      setSelectedId(null);
+      setAudit(null);
+      setStep("bundles");
     } catch (e) {
       reportError(e);
     } finally {
@@ -117,70 +122,81 @@ export default function App() {
     }
   }
 
-  // Pass 2b: 확정된 6요소 → 안내문·루브릭
-  async function runFinal(sel: GraspsSelection) {
+  async function runAudit(bundle: GraspsBundle) {
     if (!stage1) return;
-    setSelection(sel);
-    setError(null);
-    setBusy(true);
+    setAuditing(true);
     try {
-      // Pass 2b: 초안 생성
-      const draft = await generateGraspsFinal(
-        input,
-        stage1,
-        sel,
-        apiKey,
-        model,
-        udlOptions,
-      );
-      // Pass 2c: 자기검증 → 교정본 + 수정 내역 (실패해도 초안으로 폴백)
-      const { final, issues } = await verifyGraspsFinal(
-        input,
-        stage1,
-        sel,
-        draft,
-        apiKey,
-        model,
-        udlOptions,
-      );
-      setTask({
-        ...sel,
-        studentPrompt: final.studentPrompt,
-        productOptions: final.productOptions,
-        rubric: final.rubric,
-      });
-      setVerifyNotes(issues);
-      setStep("result");
-    } catch (e) {
-      reportError(e);
+      const result = await auditBundle(stage1, bundle, apiKey, model);
+      setAudit(result);
     } finally {
-      setBusy(false);
+      setAuditing(false);
     }
   }
 
-  async function handleRegenerate() {
-    if (selection) await runFinal(selection);
+  // 번들 카드 선택 → refine + 감사(선택 번들만)
+  function handleSelectBundle(id: string) {
+    setSelectedId(id);
+    setAudit(null);
+    setStep("refine");
+    const b = bundles.find((x) => x.id === id);
+    if (b) void runAudit(b);
+  }
+
+  function handleToggleLock(key: ElementKey) {
+    if (!selected) return;
+    if (selected.state[key] === "stale") return;
+    const nextState = selected.state[key] === "locked" ? "generated" : "locked";
+    const updated: GraspsBundle = {
+      ...selected,
+      state: { ...selected.state, [key]: nextState },
+    };
+    setBundles((bs) => bs.map((b) => (b.id === updated.id ? updated : b)));
+  }
+
+  async function handleRegenElement(key: ElementKey) {
+    if (!selected || !stage1) return;
+    setError(null);
+    setBusyElement(key);
+    try {
+      const exclude =
+        key === "standards" ? [] : [selected[key] as string].filter(Boolean);
+      const updated = await regenerateElement(
+        selected,
+        key,
+        { exclude },
+        input,
+        stage1,
+        apiKey,
+        model,
+        udlOptions,
+      );
+      setBundles((bs) => bs.map((b) => (b.id === updated.id ? updated : b)));
+      await runAudit(updated);
+    } catch (e) {
+      reportError(e);
+    } finally {
+      setBusyElement(null);
+    }
+  }
+
+  function handleReaudit() {
+    if (selected) void runAudit(selected);
   }
 
   function handleCopy() {
-    if (stage1 && task) copyToClipboard(toMarkdown(input, stage1, task));
+    if (stage1 && selected) copyToClipboard(toMarkdown(input, stage1, selected));
   }
-
-  function handleDownload() {
-    if (stage1 && task) {
+  function handleDownloadMd() {
+    if (stage1 && selected)
       downloadMarkdown(
         `${safeBaseName(input)}.md`,
-        toMarkdown(input, stage1, task),
+        toMarkdown(input, stage1, selected),
       );
-    }
   }
-
   function handleDownloadXlsx() {
-    if (stage1 && task) {
-      void downloadXlsx(input, stage1, task, `${safeBaseName(input)}.xlsx`);
-    }
+    if (stage1 && selected)
+      void downloadXlsx(input, stage1, selected, `${safeBaseName(input)}.xlsx`);
   }
-
   function handlePrint() {
     printResult(safeBaseName(input));
   }
@@ -188,10 +204,9 @@ export default function App() {
   function handleRestart() {
     setStep("input");
     setStage1(null);
-    setCandidates(null);
-    setSelection(null);
-    setTask(null);
-    setVerifyNotes([]);
+    setBundles([]);
+    setSelectedId(null);
+    setAudit(null);
     setError(null);
   }
 
@@ -203,17 +218,17 @@ export default function App() {
           <div className="flex items-start justify-between gap-4">
             <div className="max-w-2xl">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blueprint-line">
-                Understanding by Design · 2단계 파이프라인
+                Understanding by Design · 정합 GRASPS 설계
               </p>
               <h1 className="serif mt-3 text-3xl font-bold leading-tight sm:text-[2.6rem]">
                 이해를 먼저 정하고,
                 <br className="hidden sm:block" /> 그 다음에 과제를 설계합니다.
               </h1>
               <p className="mt-4 max-w-xl text-sm leading-relaxed text-paper/80 sm:text-base">
-                성취기준에서 GRASPS를 바로 뽑으면 '무엇에 대한 이해의 증거인가'가
-                비어 버립니다. 이 도구는 먼저 Stage 1(전이 목표·영속적 이해·본질적
-                질문)을 뽑아 <strong className="text-white">교사가 확정</strong>한
-                뒤, 그 이해를 평가하는 수행과제와 루브릭을 만듭니다.
+                GRASPS 6요소는 서로 결합돼 있습니다. 슬롯별로 따로 뽑아 조합하면
+                부정합 과제가 됩니다. 이 도구는 Stage 1을 확정한 뒤,{" "}
+                <strong className="text-white">내적으로 정합한 완성 세트 3개</strong>
+                를 만들어 하나를 고르고 정합성을 감사합니다.
               </p>
             </div>
             <button
@@ -310,25 +325,28 @@ export default function App() {
           />
         )}
 
-        {step === "candidates" && candidates && (
-          <CandidateSelect
-            candidates={candidates}
+        {step === "bundles" && (
+          <BundleCards
+            bundles={bundles}
             busy={busy}
             onBack={() => setStep("stage1")}
-            onConfirm={runFinal}
+            onSelect={handleSelectBundle}
           />
         )}
 
-        {step === "result" && stage1 && task && (
-          <GraspsResult
+        {step === "refine" && stage1 && selected && (
+          <BundleEditor
+            bundle={selected}
             stage1={stage1}
-            task={task}
-            verifyNotes={verifyNotes}
-            busy={busy}
-            onRegenerate={handleRegenerate}
-            onReselect={() => setStep("candidates")}
+            audit={audit}
+            auditing={auditing}
+            busyElement={busyElement}
+            onToggleLock={handleToggleLock}
+            onRegenerate={handleRegenElement}
+            onReaudit={handleReaudit}
+            onBack={() => setStep("bundles")}
             onCopy={handleCopy}
-            onDownload={handleDownload}
+            onDownloadMd={handleDownloadMd}
             onDownloadXlsx={handleDownloadXlsx}
             onPrint={handlePrint}
             onRestart={handleRestart}

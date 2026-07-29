@@ -1,14 +1,31 @@
-import type { GraspsTask, Stage1Result, TeacherInput } from "../types";
+import type {
+  AudienceProximity,
+  CriterionSource,
+  GraspsBundle,
+  Stage1Result,
+  TeacherInput,
+} from "../types";
 
-/** Stage 1 + GRASPS 결과를 Markdown 문서로 직렬화 */
+const AXIS_LABEL: Record<AudienceProximity, string> = {
+  classroom: "학급·학년 내부",
+  school_community: "학교·지역사회",
+  expert_public: "전문가·공적 기관",
+};
+
+const SOURCE_LABEL: Record<CriterionSource, string> = {
+  stage1_understanding: "이해 기반",
+  genre_convention: "장르 관습",
+};
+
+/** Stage 1 + 선택된 GRASPS 번들을 Markdown 문서로 직렬화 */
 export function toMarkdown(
   input: TeacherInput,
   stage1: Stage1Result,
-  task: GraspsTask,
+  bundle: GraspsBundle,
 ): string {
   const lines: string[] = [];
 
-  lines.push(`# GRASPS 수행과제 설계안`);
+  lines.push(`# GRASPS 수행평가 설계안`);
   lines.push("");
   lines.push(`- **교과**: ${input.subject || "-"}`);
   lines.push(`- **학년**: ${input.grade || "-"}`);
@@ -33,50 +50,59 @@ export function toMarkdown(
 
   lines.push(`## Stage 2 — GRASPS 수행과제`);
   lines.push("");
+  lines.push(`> **설계 논리**: ${bundle.designLogic}`);
+  lines.push(`> **청중 근접성**: ${AXIS_LABEL[bundle.axis]}`);
+  lines.push("");
   lines.push(`| 요소 | 내용 |`);
   lines.push(`| --- | --- |`);
-  lines.push(`| **G** 목표 | ${escapeCell(task.goal)} |`);
-  lines.push(`| **R** 역할 | ${escapeCell(task.role)} |`);
-  lines.push(`| **A** 청중 | ${escapeCell(task.audience)} |`);
-  lines.push(`| **S** 상황 | ${escapeCell(task.situation)} |`);
-  lines.push(`| **P** 수행·산출물 | ${escapeCell(task.performanceProduct)} |`);
-  lines.push(`| **S** 성공기준 | ${escapeCell(task.standards)} |`);
+  lines.push(`| **G** 목표 | ${escapeCell(bundle.goal)} |`);
+  lines.push(`| **R** 역할 | ${escapeCell(bundle.role)} |`);
+  lines.push(`| **A** 청중 | ${escapeCell(bundle.audience)} |`);
+  lines.push(`| **S** 상황 | ${escapeCell(bundle.situation)} |`);
+  lines.push(`| **P** 수행·산출물 | ${escapeCell(bundle.product)} |`);
   lines.push("");
 
   lines.push(`### 학생용 과제 안내문`);
   lines.push("");
-  lines.push(task.studentPrompt);
+  lines.push(bundle.studentPrompt);
   lines.push("");
 
-  if (task.productOptions && task.productOptions.length > 0) {
+  if (bundle.productOptions && bundle.productOptions.length > 0) {
     lines.push(`### 산출물 대안 (UDL — 행동·표현의 다양화)`);
     lines.push("");
-    task.productOptions.forEach((o) =>
+    bundle.productOptions.forEach((o) =>
       lines.push(`- **${o.format}**: ${o.rationale}`),
     );
     lines.push("");
   }
 
-  lines.push(`### 루브릭`);
+  lines.push(`### 성공기준·루브릭 (S — Standards)`);
   lines.push("");
-  task.rubric.forEach((c, idx) => {
-    const aligned = stage1.understandings[c.alignedUnderstandingIndex];
-    lines.push(`#### 준거 ${idx + 1}. ${c.criterion}`);
+  bundle.standards.forEach((c, idx) => {
+    lines.push(`#### 준거 ${idx + 1}. ${c.label} — \`${SOURCE_LABEL[c.source]}\``);
+    const aligned =
+      c.alignedUnderstandingIndex != null
+        ? stage1.understandings[c.alignedUnderstandingIndex]
+        : undefined;
     if (aligned) lines.push(`> 대응 이해: ${aligned}`);
     lines.push("");
-    lines.push(`| 수준 | 서술 |`);
-    lines.push(`| --- | --- |`);
-    c.levels.forEach((l) =>
-      lines.push(`| ${escapeCell(l.label)} | ${escapeCell(l.descriptor)} |`),
-    );
+    lines.push(c.descriptor);
     lines.push("");
+    if (c.levels && c.levels.length > 0) {
+      lines.push(`| 수준 | 서술 |`);
+      lines.push(`| --- | --- |`);
+      c.levels.forEach((l) =>
+        lines.push(`| ${escapeCell(l.label)} | ${escapeCell(l.descriptor)} |`),
+      );
+      lines.push("");
+    }
   });
 
   return lines.join("\n");
 }
 
 function escapeCell(text: string): string {
-  return text.replace(/\n+/g, " ").replace(/\|/g, "\\|").trim();
+  return (text ?? "").replace(/\n+/g, " ").replace(/\|/g, "\\|").trim();
 }
 
 export async function copyToClipboard(text: string): Promise<boolean> {
@@ -130,16 +156,21 @@ export function printResult(name: string): void {
   window.print();
 }
 
-/** Stage 1 + GRASPS 결과를 .xlsx(개요·GRASPS·루브릭 3시트)로 저장 */
+/** Stage 1 + 번들을 .xlsx(개요·GRASPS·루브릭 3시트)로 저장 */
 export async function downloadXlsx(
   input: TeacherInput,
   stage1: Stage1Result,
-  task: GraspsTask,
+  bundle: GraspsBundle,
   filename: string,
 ): Promise<void> {
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
 
-  type Cell = { value: string; type: StringConstructor; fontWeight?: "bold"; wrap?: boolean };
+  type Cell = {
+    value: string;
+    type: StringConstructor;
+    fontWeight?: "bold";
+    wrap?: boolean;
+  };
   const cell = (value: string, bold = false): Cell => ({
     value: value ?? "",
     type: String,
@@ -157,6 +188,8 @@ export async function downloadXlsx(
   if (input.standardCode) overview.push(kv("성취기준 코드", input.standardCode));
   overview.push(
     kv("성취기준", input.standard || "-"),
+    kv("설계 논리", bundle.designLogic),
+    kv("청중 근접성", AXIS_LABEL[bundle.axis]),
     kv("전이 목표", stage1.transferGoal),
     ...stage1.understandings.map((u, i) => kv(`영속적 이해 ${i + 1}`, u)),
     ...stage1.essentialQuestions.map((q, i) => kv(`본질적 질문 ${i + 1}`, q)),
@@ -165,53 +198,69 @@ export async function downloadXlsx(
   // 시트 2 — GRASPS
   const grasps: Cell[][] = [
     [cell("요소", true), cell("내용", true)],
-    kv("G 목표", task.goal),
-    kv("R 역할", task.role),
-    kv("A 청중", task.audience),
-    kv("S 상황", task.situation),
-    kv("P 수행·산출물", task.performanceProduct),
-    kv("S 성공기준", task.standards),
-    [cell("학생용 안내문", true), cell(task.studentPrompt)],
+    kv("G 목표", bundle.goal),
+    kv("R 역할", bundle.role),
+    kv("A 청중", bundle.audience),
+    kv("S 상황", bundle.situation),
+    kv("P 수행·산출물", bundle.product),
+    [cell("학생용 안내문", true), cell(bundle.studentPrompt)],
   ];
-  if (task.productOptions?.length) {
+  if (bundle.productOptions?.length) {
     grasps.push(
-      ...task.productOptions.map((o, i) =>
+      ...bundle.productOptions.map((o, i) =>
         kv(`산출물 대안 ${i + 1}`, `${o.format} — ${o.rationale}`),
       ),
     );
   }
 
-  // 시트 3 — 루브릭 (준거 × 수준 격자)
-  const maxLevels = Math.max(...task.rubric.map((c) => c.levels.length), 0);
-  const labelSource =
-    task.rubric.find((c) => c.levels.length === maxLevels) ?? task.rubric[0];
-  const levelLabels = Array.from({ length: maxLevels }, (_, i) =>
-    labelSource?.levels[i]?.label ?? `수준 ${i + 1}`,
+  // 시트 3 — 루브릭 (준거 × 수준 격자, 출처 열 포함)
+  const maxLevels = Math.max(
+    0,
+    ...bundle.standards.map((c) => c.levels?.length ?? 0),
   );
-  const rubric: Cell[][] = [
-    [cell("준거", true), cell("대응 이해", true), ...levelLabels.map((l) => cell(l, true))],
-    ...task.rubric.map((c) => [
-      cell(c.criterion),
-      cell(stage1.understandings[c.alignedUnderstandingIndex] ?? ""),
-      ...Array.from({ length: maxLevels }, (_, i) =>
-        cell(c.levels[i]?.descriptor ?? ""),
-      ),
-    ]),
+  const leveled = maxLevels > 0;
+  const labelSource = bundle.standards.find(
+    (c) => (c.levels?.length ?? 0) === maxLevels,
+  );
+  const levelLabels = leveled
+    ? Array.from(
+        { length: maxLevels },
+        (_, i) => labelSource?.levels?.[i]?.label ?? `수준 ${i + 1}`,
+      )
+    : [];
+  const rubricHeader = [
+    cell("준거", true),
+    cell("출처", true),
+    cell("대응 이해", true),
+    ...(leveled ? levelLabels.map((l) => cell(l, true)) : [cell("서술", true)]),
   ];
+  const rubricRows = bundle.standards.map((c) => {
+    const aligned =
+      c.alignedUnderstandingIndex != null
+        ? (stage1.understandings[c.alignedUnderstandingIndex] ?? "")
+        : "";
+    const tail = leveled
+      ? Array.from({ length: maxLevels }, (_, i) =>
+          cell(c.levels?.[i]?.descriptor ?? ""),
+        )
+      : [cell(c.descriptor)];
+    return [cell(c.label), cell(SOURCE_LABEL[c.source]), cell(aligned), ...tail];
+  });
+  const rubric: Cell[][] = [rubricHeader, ...rubricRows];
+  const rubricCols = leveled
+    ? [
+        { width: 26 },
+        { width: 12 },
+        { width: 30 },
+        ...levelLabels.map(() => ({ width: 38 })),
+      ]
+    : [{ width: 26 }, { width: 12 }, { width: 30 }, { width: 60 }];
 
   const blob = await writeXlsxFile(
     [
       { data: overview, sheet: "개요", columns: [{ width: 18 }, { width: 80 }] },
       { data: grasps, sheet: "GRASPS", columns: [{ width: 18 }, { width: 90 }] },
-      {
-        data: rubric,
-        sheet: "루브릭",
-        columns: [
-          { width: 30 },
-          { width: 30 },
-          ...levelLabels.map(() => ({ width: 40 })),
-        ],
-      },
+      { data: rubric, sheet: "루브릭", columns: rubricCols },
     ] as never,
     {},
   ).toBlob();
