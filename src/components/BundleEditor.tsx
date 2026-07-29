@@ -49,6 +49,17 @@ export default function BundleEditor(props: Props) {
   const gate = canExport(bundle);
   const busy = busyElement !== null;
 
+  // 내보내기 차단: stale·준거 부재(canExport) + 정합성 감사 실패/미완
+  const exportReasons = [...gate.reasons];
+  if (auditing) {
+    exportReasons.push("정합성 감사가 끝나면 내보낼 수 있습니다.");
+  } else if (audit && !audit.passed) {
+    exportReasons.push(
+      "정합성 감사에서 실패한 항목이 있습니다. 해당 요소를 재생성해 해결한 뒤 내보내세요.",
+    );
+  }
+  const exportOk = exportReasons.length === 0;
+
   const handleCopy = () => {
     onCopy();
     setCopied(true);
@@ -108,28 +119,28 @@ export default function BundleEditor(props: Props) {
       <div className="sticky top-2 z-10 mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-paper-line bg-paper/90 p-2 shadow-sm backdrop-blur print:hidden">
         <button
           onClick={onPrint}
-          disabled={!gate.ok}
+          disabled={!exportOk}
           className="rounded-lg bg-blueprint px-3 py-2 text-sm font-semibold text-white hover:bg-blueprint-deep disabled:opacity-40"
         >
           PDF로 저장
         </button>
         <button
           onClick={onDownloadXlsx}
-          disabled={!gate.ok}
+          disabled={!exportOk}
           className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-ink ring-1 ring-paper-line hover:bg-paper disabled:opacity-40"
         >
           엑셀(.xlsx)
         </button>
         <button
           onClick={onDownloadMd}
-          disabled={!gate.ok}
+          disabled={!exportOk}
           className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-ink ring-1 ring-paper-line hover:bg-paper disabled:opacity-40"
         >
           .md 다운로드
         </button>
         <button
           onClick={handleCopy}
-          disabled={!gate.ok}
+          disabled={!exportOk}
           className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-ink ring-1 ring-paper-line hover:bg-paper disabled:opacity-40"
         >
           {copied ? "복사됨 ✓" : "Markdown 복사"}
@@ -157,14 +168,14 @@ export default function BundleEditor(props: Props) {
       </div>
 
       {/* 내보내기 차단 사유 */}
-      {!gate.ok && (
+      {!exportOk && (
         <div
           role="alert"
           className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 print:hidden"
         >
           <p className="font-semibold">내보내기가 아직 막혀 있습니다.</p>
           <ul className="mt-1 list-disc space-y-0.5 pl-5">
-            {gate.reasons.map((r, i) => (
+            {exportReasons.map((r, i) => (
               <li key={i}>{r}</li>
             ))}
           </ul>
