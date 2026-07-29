@@ -46,6 +46,51 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * 키가 실제로 지원하는 generateContent 모델을 조회해 캐시.
+ * 모델명이 키/프로젝트에서 안 먹혀 404가 나는 문제를 근본적으로 없앤다.
+ */
+const modelListCache = new Map<string, string[]>();
+
+async function listGenerateContentModels(apiKey: string): Promise<string[]> {
+  const cached = modelListCache.get(apiKey);
+  if (cached) return cached;
+  try {
+    const res = await fetch(
+      `${ENDPOINT}?key=${encodeURIComponent(apiKey)}&pageSize=1000`,
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const names: string[] = (data?.models ?? [])
+      .filter((m: { supportedGenerationMethods?: string[] }) =>
+        (m.supportedGenerationMethods ?? []).includes("generateContent"),
+      )
+      .map((m: { name?: string }) => (m.name ?? "").replace(/^models\//, ""))
+      .filter(Boolean);
+    modelListCache.set(apiKey, names);
+    return names;
+  } catch {
+    return [];
+  }
+}
+
+/** 선호 모델이 지원되면 그대로, 아니면 사용 가능한 최적 모델로 대체 */
+async function resolveModel(apiKey: string, preferred: string): Promise<string> {
+  const available = await listGenerateContentModels(apiKey);
+  if (available.length === 0) return preferred; // 목록 조회 실패 → 그대로 시도
+  if (preferred && available.includes(preferred)) return preferred;
+  const prefs = [
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-2.0-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-pro",
+  ];
+  for (const p of prefs) if (available.includes(p)) return p;
+  const flash = available.find((m) => m.includes("flash"));
+  return flash ?? available[0];
+}
+
 /** JSON 강제 출력으로 Gemini를 호출하고 파싱된 객체를 반환. 429/503은 1회 재시도. */
 async function callGemini<T>({
   apiKey,
@@ -54,7 +99,8 @@ async function callGemini<T>({
   user,
   schema,
 }: CallOptions): Promise<T> {
-  const url = `${ENDPOINT}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const usableModel = await resolveModel(apiKey, model);
+  const url = `${ENDPOINT}/${encodeURIComponent(usableModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const body = {
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: "user", parts: [{ text: user }] }],
@@ -116,6 +162,11 @@ async function callGemini<T>({
     if (res.status === 400 || res.status === 403) {
       throw new GeminiError(
         "API 키가 유효하지 않거나 권한이 없습니다. 키를 다시 확인해 주세요.",
+      );
+    }
+    if (res.status === 404) {
+      throw new GeminiError(
+        `이 API 키에서 사용할 수 있는 모델('${usableModel}')을 찾지 못했습니다. 키가 Gemini API(Generative Language API)용인지 확인하거나, API 키 설정에서 다른 모델을 선택해 주세요.`,
       );
     }
     if (res.status === 429) {

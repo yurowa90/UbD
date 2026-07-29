@@ -11,6 +11,7 @@ interface Props {
 
 const MODELS = [
   { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash (권장 · 빠름)" },
+  { id: "gemini-flash-latest", label: "Gemini Flash (최신 별칭)" },
   { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro (고품질 · 느림)" },
   { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
 ];
@@ -72,6 +73,9 @@ export default function ApiKeyModal({
               </option>
             ))}
           </select>
+          <span className="mt-1 block text-xs font-normal text-ink-soft">
+            선택한 모델이 이 키에서 안 되면, 키가 지원하는 모델로 자동 대체됩니다.
+          </span>
         </label>
 
         <p className="mt-4 text-xs text-ink-soft">
