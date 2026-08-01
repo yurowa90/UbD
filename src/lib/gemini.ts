@@ -4,6 +4,7 @@ import type {
   AuditCheckKey,
   BundleAudit,
   Criterion,
+  CriterionSource,
   ElementKey,
   GraspsBundle,
   ProductOption,
@@ -100,7 +101,41 @@ async function resolveModel(apiKey: string, preferred: string): Promise<string> 
   return flash ?? available[0];
 }
 
-/** JSON 강제 출력으로 Gemini를 호출하고 파싱된 객체를 반환. 429/503은 1회 재시도. */
+/** 404(모델 없음) 시 순서대로 시도할 후보 모델 */
+const FALLBACK_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-flash-latest",
+  "gemini-2.0-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-pro",
+];
+
+/** 키별로 실제 동작한 모델 캐시 */
+const workingModelCache = new Map<string, string>();
+
+function uniqStrings(arr: (string | undefined | null)[]): string[] {
+  const out: string[] = [];
+  for (const a of arr) if (a && !out.includes(a)) out.push(a);
+  return out;
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n) + "…" : s;
+}
+
+async function readErrorMessage(res: Response): Promise<string> {
+  try {
+    const d = await res.json();
+    return (d?.error?.message as string) || "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * JSON 강제 출력으로 Gemini를 호출하고 파싱된 객체를 반환.
+ * 429/503은 1회 재시도. 404(모델 없음)는 후보 모델로 자동 폴백한다.
+ */
 async function callGemini<T>({
   apiKey,
   model,
@@ -108,8 +143,13 @@ async function callGemini<T>({
   user,
   schema,
 }: CallOptions): Promise<T> {
-  const usableModel = await resolveModel(apiKey, model);
-  const url = `${ENDPOINT}/${encodeURIComponent(usableModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const resolved = await resolveModel(apiKey, model);
+  const candidates = uniqStrings([
+    workingModelCache.get(apiKey),
+    resolved,
+    model,
+    ...FALLBACK_MODELS,
+  ]);
   const body = {
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: "user", parts: [{ text: user }] }],
@@ -120,38 +160,46 @@ async function callGemini<T>({
     },
   };
 
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-    } catch {
-      throw new GeminiError(
-        "네트워크 연결에 실패했습니다. 인터넷 상태를 확인한 뒤 다시 시도해 주세요.",
-      );
+  let last404: string | null = null;
+  for (const m of candidates) {
+    const url = `${ENDPOINT}/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      } catch {
+        throw new GeminiError(
+          "네트워크 연결에 실패했습니다. 인터넷 상태를 확인한 뒤 다시 시도해 주세요.",
+        );
+      }
+      if ((res.status === 429 || res.status === 503) && attempt === 0) {
+        await sleep(1500);
+        continue;
+      }
+      break;
     }
+    if (!res) continue;
 
     if (res.ok) {
+      workingModelCache.set(apiKey, m);
       const data = await res.json();
       const text: string | undefined =
         data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
       if (!text) {
         const blockReason = data?.promptFeedback?.blockReason;
         if (blockReason) {
           throw new GeminiError(
-            `모델이 응답을 생성하지 못했습니다(사유: ${blockReason}). 성취기준 문구를 다듬어 다시 시도해 주세요.`,
+            `모델이 응답을 생성하지 못했습니다(사유: ${blockReason}). 입력 문구를 다듬어 다시 시도해 주세요.`,
           );
         }
         throw new GeminiError(
           "모델이 빈 응답을 반환했습니다. 다시 시도해 주세요.",
         );
       }
-
       try {
         return JSON.parse(text) as T;
       } catch {
@@ -161,21 +209,25 @@ async function callGemini<T>({
       }
     }
 
-    // 재시도 가능한 상태 코드
-    if ((res.status === 429 || res.status === 503) && attempt === 0) {
-      lastError = res.status;
-      await sleep(1500);
+    // 404 = 그 모델이 이 키에 없음 → 다음 후보 모델로
+    if (res.status === 404) {
+      last404 = m;
       continue;
     }
 
-    if (res.status === 400 || res.status === 403) {
+    const msg = await readErrorMessage(res);
+    if (res.status === 403) {
       throw new GeminiError(
-        "API 키가 유효하지 않거나 권한이 없습니다. 키를 다시 확인해 주세요.",
+        "API 키에 권한이 없습니다. 키가 Gemini API(Generative Language API)용인지 확인해 주세요.",
       );
     }
-    if (res.status === 404) {
+    if (res.status === 400) {
+      // 키 문제와 요청(스키마) 문제를 구분해 실제 사유를 노출
+      if (/api[_ ]?key|API_KEY_INVALID|permission|credential/i.test(msg)) {
+        throw new GeminiError("API 키가 유효하지 않습니다. 키를 다시 확인해 주세요.");
+      }
       throw new GeminiError(
-        `이 API 키에서 사용할 수 있는 모델('${usableModel}')을 찾지 못했습니다. 키가 Gemini API(Generative Language API)용인지 확인하거나, API 키 설정에서 다른 모델을 선택해 주세요.`,
+        `요청이 거부되었습니다(400): ${truncate(msg, 240) || "요청 형식 오류"}`,
       );
     }
     if (res.status === 429) {
@@ -184,12 +236,12 @@ async function callGemini<T>({
       );
     }
     throw new GeminiError(
-      `모델 호출에 실패했습니다(HTTP ${res.status}). 잠시 후 다시 시도해 주세요.`,
+      `모델 호출에 실패했습니다(HTTP ${res.status})${msg ? `: ${truncate(msg, 200)}` : ""}.`,
     );
   }
 
   throw new GeminiError(
-    `모델이 일시적으로 혼잡합니다(${lastError}). 잠시 후 다시 시도해 주세요.`,
+    `이 API 키에서 사용 가능한 generateContent 모델을 찾지 못했습니다(마지막 시도: ${last404 ?? "-"}). 키가 Google AI Studio의 Gemini API 키인지 확인해 주세요.`,
   );
 }
 
@@ -219,6 +271,38 @@ interface BundleContent {
   studentPrompt: string;
   standards: Criterion[];
   productOptions?: ProductOption[];
+}
+
+const AXES: AudienceProximity[] = [
+  "classroom",
+  "school_community",
+  "expert_public",
+];
+
+/** enum 제거에 따른 안전망: axis를 3값 중 하나로 정규화 */
+function normAxis(a: string): AudienceProximity {
+  const v = (a || "").toLowerCase().trim();
+  if ((AXES as string[]).includes(v)) return v as AudienceProximity;
+  if (/class|학급|학년|동료|후배|또래/.test(v)) return "classroom";
+  if (/school|community|학교|지역|주민|학부모|신문|마을/.test(v))
+    return "school_community";
+  return "expert_public";
+}
+
+/** source를 2값 중 하나로 정규화 */
+function normSource(s: string): CriterionSource {
+  return s === "stage1_understanding" ? "stage1_understanding" : "genre_convention";
+}
+
+function normalizeContent(list: BundleContent[]): BundleContent[] {
+  return list.map((b) => ({
+    ...b,
+    axis: normAxis(b.axis),
+    standards: (Array.isArray(b.standards) ? b.standards : []).map((c) => ({
+      ...c,
+      source: normSource(c.source),
+    })),
+  }));
 }
 
 function toBundles(list: BundleContent[]): GraspsBundle[] {
@@ -259,7 +343,9 @@ export async function generateBundles(
       user: buildBundlesUser(input, stage1),
       schema: BUNDLES_SCHEMA,
     });
-    const bundles = Array.isArray(res.bundles) ? res.bundles : [];
+    const bundles = normalizeContent(
+      Array.isArray(res.bundles) ? res.bundles : [],
+    );
     last = bundles;
     const distinctAxes =
       bundles.length === 3 && new Set(bundles.map((b) => b.axis)).size === 3;

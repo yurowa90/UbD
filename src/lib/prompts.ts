@@ -50,10 +50,8 @@ const criterionSchema = {
   type: "object",
   properties: {
     label: { type: "string" },
-    source: {
-      type: "string",
-      enum: ["stage1_understanding", "genre_convention"],
-    },
+    // 값은 "stage1_understanding" 또는 "genre_convention" (프롬프트로 강제)
+    source: { type: "string" },
     alignedUnderstandingIndex: { type: "integer" },
     descriptor: { type: "string" },
     levels: levelsSchema,
@@ -90,10 +88,8 @@ const productOptionsSchema = {
 
 const bundleContentProps = {
   designLogic: { type: "string" },
-  axis: {
-    type: "string",
-    enum: ["classroom", "school_community", "expert_public"],
-  },
+  // 값은 "classroom" | "school_community" | "expert_public" (프롬프트로 강제)
+  axis: { type: "string" },
   role: { type: "string" },
   audience: { type: "string" },
   situation: { type: "string" },
@@ -188,17 +184,8 @@ export const AUDIT_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          key: {
-            type: "string",
-            enum: [
-              "ra_reach",
-              "rg_authority",
-              "ap_receivability",
-              "s_coherence",
-              "construct_irrelevant",
-              "construct_underrep",
-            ],
-          },
+          // key는 아래 6개 중 하나 (프롬프트로 강제)
+          key: { type: "string" },
           passed: { type: "boolean" },
           explanation: { type: "string" },
         },
@@ -347,7 +334,8 @@ ${rubricLevelRule(levels)}
 ${includeUdlOptions ? '- productOptions: 같은 이해를 여러 산출 형태로 드러내는 UDL 대안 3개(같은 루브릭으로 채점 가능).' : "- productOptions는 넣지 않습니다."}
 
 3개 번들 사이 규칙:
-- 세 번들의 **axis(classroom / school_community / expert_public)는 서로 달라야** 합니다. 청중 근접성으로 분산해 선택이 의미 있게 하십시오.
+- 세 번들의 **axis는 서로 달라야** 합니다. axis 값은 반드시 영문 소문자 식별자 "classroom" / "school_community" / "expert_public" 중 하나를 그대로 적습니다(한국어로 쓰지 마십시오). 청중 근접성으로 분산해 선택이 의미 있게 하십시오.
+- standards의 source 값도 반드시 "stage1_understanding" 또는 "genre_convention" 문자열 그대로 적습니다.
 - 세 designLogic은 서로 뚜렷이 다른 설계 논리여야 합니다(표현만 바꾼 변주 금지).`;
 }
 
