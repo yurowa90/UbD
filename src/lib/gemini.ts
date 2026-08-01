@@ -13,12 +13,12 @@ import type {
 } from "../types";
 import {
   AUDIT_SCHEMA,
-  BUNDLES_SCHEMA,
+  SINGLE_BUNDLE_SCHEMA,
   STAGE1_SCHEMA,
   buildAuditSystem,
   buildAuditUser,
-  buildBundlesSystem,
-  buildBundlesUser,
+  buildBundleSystem,
+  buildBundleUser,
   buildRegenElementSystem,
   buildRegenElementUser,
   buildStage1System,
@@ -259,10 +259,9 @@ export async function generateStage1(
   });
 }
 
-/** 모델이 반환하는 번들 본문 (id·state는 클라이언트가 부여) */
+/** 모델이 반환하는 번들 본문 (id·axis·state는 클라이언트가 부여) */
 interface BundleContent {
   designLogic: string;
-  axis: AudienceProximity;
   role: string;
   audience: string;
   situation: string;
@@ -273,59 +272,74 @@ interface BundleContent {
   productOptions?: ProductOption[];
 }
 
+/** 3개 번들을 이 축들로 분산(각각 별도 호출 → 스키마 얕게 유지) */
 const AXES: AudienceProximity[] = [
   "classroom",
   "school_community",
   "expert_public",
 ];
 
-/** enum 제거에 따른 안전망: axis를 3값 중 하나로 정규화 */
-function normAxis(a: string): AudienceProximity {
-  const v = (a || "").toLowerCase().trim();
-  if ((AXES as string[]).includes(v)) return v as AudienceProximity;
-  if (/class|학급|학년|동료|후배|또래/.test(v)) return "classroom";
-  if (/school|community|학교|지역|주민|학부모|신문|마을/.test(v))
-    return "school_community";
-  return "expert_public";
-}
-
-/** source를 2값 중 하나로 정규화 */
 function normSource(s: string): CriterionSource {
-  return s === "stage1_understanding" ? "stage1_understanding" : "genre_convention";
+  return s === "stage1_understanding"
+    ? "stage1_understanding"
+    : "genre_convention";
 }
 
-function normalizeContent(list: BundleContent[]): BundleContent[] {
-  return list.map((b) => ({
-    ...b,
-    axis: normAxis(b.axis),
-    standards: (Array.isArray(b.standards) ? b.standards : []).map((c) => ({
-      ...c,
-      source: normSource(c.source),
-    })),
-  }));
-}
-
-function toBundles(list: BundleContent[]): GraspsBundle[] {
-  return list.map((b, i) => ({
+function toBundle(
+  b: BundleContent,
+  axis: AudienceProximity,
+  i: number,
+): GraspsBundle {
+  return {
     id: String(i),
     designLogic: b.designLogic,
-    axis: b.axis,
+    axis,
     role: b.role,
     audience: b.audience,
     situation: b.situation,
     goal: b.goal,
     product: b.product,
-    standards: Array.isArray(b.standards) ? b.standards : [],
+    standards: (Array.isArray(b.standards) ? b.standards : []).map((c) => ({
+      ...c,
+      source: normSource(c.source),
+    })),
     studentPrompt: b.studentPrompt,
     productOptions: b.productOptions,
     state: freshState(),
-  }));
+  };
+}
+
+/** 한 축의 번들 1개 생성. stage1_understanding 준거가 없으면 1회 재생성. */
+async function generateOneBundle(
+  axis: AudienceProximity,
+  input: TeacherInput,
+  stage1: Stage1Result,
+  apiKey: string,
+  model: string,
+  includeUdlOptions: boolean,
+): Promise<BundleContent> {
+  let last: BundleContent | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const b = await callGemini<BundleContent>({
+      apiKey,
+      model,
+      system: buildBundleSystem(axis, includeUdlOptions, input.achievementLevels),
+      user: buildBundleUser(input, stage1, axis),
+      schema: SINGLE_BUNDLE_SCHEMA,
+    });
+    last = b;
+    const hasStage1 = (b.standards ?? []).some(
+      (c) => normSource(c.source) === "stage1_understanding",
+    );
+    if (hasStage1) return b;
+  }
+  return last as BundleContent;
 }
 
 /**
- * 내적으로 정합한 GRASPS 번들 3개를 일괄 생성.
- * axis 상이 + 각 번들에 stage1_understanding 준거 존재를 검증하고,
- * 미달이면 1회 재생성한다.
+ * 내적으로 정합한 GRASPS 번들 3개를 생성.
+ * 깊은 스키마 중첩(3개 배열)을 피해 축별로 1개씩 병렬 생성하며,
+ * 이로써 axis 상이도 자동 보장된다.
  */
 export async function generateBundles(
   input: TeacherInput,
@@ -334,32 +348,12 @@ export async function generateBundles(
   model: string,
   includeUdlOptions: boolean,
 ): Promise<GraspsBundle[]> {
-  let last: BundleContent[] | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await callGemini<{ bundles: BundleContent[] }>({
-      apiKey,
-      model,
-      system: buildBundlesSystem(includeUdlOptions, input.achievementLevels),
-      user: buildBundlesUser(input, stage1),
-      schema: BUNDLES_SCHEMA,
-    });
-    const bundles = normalizeContent(
-      Array.isArray(res.bundles) ? res.bundles : [],
-    );
-    last = bundles;
-    const distinctAxes =
-      bundles.length === 3 && new Set(bundles.map((b) => b.axis)).size === 3;
-    const eachHasStage1 = bundles.every((b) =>
-      (b.standards ?? []).some((c) => c.source === "stage1_understanding"),
-    );
-    if (distinctAxes && eachHasStage1) return toBundles(bundles);
-  }
-  if (last && last.length === 3 && new Set(last.map((b) => b.axis)).size === 3) {
-    return toBundles(last);
-  }
-  throw new GeminiError(
-    "서로 다른 축의 정합한 번들 3개를 만들지 못했습니다. 다시 시도해 주세요.",
+  const contents = await Promise.all(
+    AXES.map((axis) =>
+      generateOneBundle(axis, input, stage1, apiKey, model, includeUdlOptions),
+    ),
   );
+  return contents.map((b, i) => toBundle(b, AXES[i], i));
 }
 
 /**

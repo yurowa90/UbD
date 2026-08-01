@@ -69,8 +69,6 @@ const criterionSchema = {
 const standardsSchema = {
   type: "array",
   items: criterionSchema,
-  minItems: 2,
-  maxItems: 5,
 };
 
 const productOptionsSchema = {
@@ -86,61 +84,45 @@ const productOptionsSchema = {
   },
 };
 
-const bundleContentProps = {
-  designLogic: { type: "string" },
-  // 값은 "classroom" | "school_community" | "expert_public" (프롬프트로 강제)
-  axis: { type: "string" },
-  role: { type: "string" },
-  audience: { type: "string" },
-  situation: { type: "string" },
-  goal: { type: "string" },
-  product: { type: "string" },
-  studentPrompt: { type: "string" },
-  standards: standardsSchema,
-  productOptions: productOptionsSchema,
-};
-
-const bundleContentOrder = [
-  "designLogic",
-  "axis",
-  "role",
-  "audience",
-  "situation",
-  "goal",
-  "product",
-  "studentPrompt",
-  "standards",
-  "productOptions",
-];
-
-/** 번들 3개 일괄 생성 — designLogic을 먼저 두어 "논리 → 요소 도출"을 강제 */
-export const BUNDLES_SCHEMA = {
+/**
+ * 번들 1개 스키마 (axis는 클라이언트가 축별로 지정하므로 출력에서 제외).
+ * 깊은 중첩을 피하려고 번들을 축별로 1개씩 생성한다 — 3개를 배열로 한 번에
+ * 받으면 스키마 중첩이 깊어져 Gemini가 거부(400)한다.
+ */
+export const SINGLE_BUNDLE_SCHEMA = {
   type: "object",
   properties: {
-    bundles: {
-      type: "array",
-      minItems: 3,
-      maxItems: 3,
-      items: {
-        type: "object",
-        properties: bundleContentProps,
-        required: [
-          "designLogic",
-          "axis",
-          "role",
-          "audience",
-          "situation",
-          "goal",
-          "product",
-          "studentPrompt",
-          "standards",
-        ],
-        propertyOrdering: bundleContentOrder,
-      },
-    },
+    designLogic: { type: "string" },
+    role: { type: "string" },
+    audience: { type: "string" },
+    situation: { type: "string" },
+    goal: { type: "string" },
+    product: { type: "string" },
+    studentPrompt: { type: "string" },
+    standards: standardsSchema,
+    productOptions: productOptionsSchema,
   },
-  required: ["bundles"],
-  propertyOrdering: ["bundles"],
+  required: [
+    "designLogic",
+    "role",
+    "audience",
+    "situation",
+    "goal",
+    "product",
+    "studentPrompt",
+    "standards",
+  ],
+  propertyOrdering: [
+    "designLogic",
+    "role",
+    "audience",
+    "situation",
+    "goal",
+    "product",
+    "studentPrompt",
+    "standards",
+    "productOptions",
+  ],
 };
 
 /** 대상 요소 하나를 재생성 — studentPrompt(+product 시 UDL 옵션)도 함께 갱신 */
@@ -301,15 +283,26 @@ ${line("product", bundle.product)}
 ${std}`;
 }
 
-/* ── 번들 3개 일괄 생성 ─────────────────────────────────── */
+/* ── 번들 1개 생성 (축별로 호출) ─────────────────────────── */
 
-export function buildBundlesSystem(
+const AXIS_GUIDE: Record<string, string> = {
+  classroom: "classroom — 청중이 학급·학년 내부(같은 반 동료, 후배 학년 등)",
+  school_community:
+    "school_community — 청중이 학교·지역사회(학부모회, 주민센터, 지역 신문 등)",
+  expert_public:
+    "expert_public — 청중이 전문가·공적 기관(시청 담당 부서, 학회, 시민단체 등)",
+};
+
+export function buildBundleSystem(
+  axis: string,
   includeUdlOptions: boolean,
   levels?: AchievementLevels,
 ): string {
   return `${SHARED_ROLE}
 
-당신의 임무는 **교사가 확정한 Stage 1**을 평가할, **내적으로 정합한 GRASPS 완성 세트(번들)를 정확히 3개** 생성하는 것입니다. 슬롯별로 요소를 따로 뽑아 조합하지 마십시오 — 각 번들은 처음부터 하나의 정합한 세트여야 합니다.
+당신의 임무는 **교사가 확정한 Stage 1**을 평가할, **내적으로 정합한 GRASPS 완성 세트(번들) 1개**를 생성하는 것입니다. 슬롯별로 요소를 따로 뽑아 조합하지 마십시오 — 하나의 정합한 세트여야 합니다.
+
+**이 번들의 청중 근접성(axis): ${AXIS_GUIDE[axis] ?? axis}.** 이 축의 청중에 맞게 Role·Audience·Situation을 설계하십시오.
 
 <knowledge name="grasps">
 ${grasps}
@@ -332,16 +325,13 @@ ${includeUdlOptions ? `\n<knowledge name="udl">\n${udl}\n</knowledge>\n` : ""}
 ${rubricLevelRule(levels)}
 - studentPrompt: 그 번들의 6요소를 자연스럽게 통합해 학생에게 그대로 제시할 안내문.
 ${includeUdlOptions ? '- productOptions: 같은 이해를 여러 산출 형태로 드러내는 UDL 대안 3개(같은 루브릭으로 채점 가능).' : "- productOptions는 넣지 않습니다."}
-
-3개 번들 사이 규칙:
-- 세 번들의 **axis는 서로 달라야** 합니다. axis 값은 반드시 영문 소문자 식별자 "classroom" / "school_community" / "expert_public" 중 하나를 그대로 적습니다(한국어로 쓰지 마십시오). 청중 근접성으로 분산해 선택이 의미 있게 하십시오.
-- standards의 source 값도 반드시 "stage1_understanding" 또는 "genre_convention" 문자열 그대로 적습니다.
-- 세 designLogic은 서로 뚜렷이 다른 설계 논리여야 합니다(표현만 바꾼 변주 금지).`;
+- standards 준거는 2~4개로. source 값은 반드시 "stage1_understanding" 또는 "genre_convention" 문자열 그대로 적습니다.`;
 }
 
-export function buildBundlesUser(
+export function buildBundleUser(
   input: TeacherInput,
   stage1: Stage1Result,
+  axis: string,
 ): string {
   return `교과: ${input.subject || "(미지정)"} / 학년: ${input.grade || "(미지정)"}
 ${input.context ? `수업 맥락: ${input.context}\n` : ""}
@@ -349,7 +339,7 @@ ${input.context ? `수업 맥락: ${input.context}\n` : ""}
 
 ${stage1Block(stage1)}${officialLevelsBlock(input.achievementLevels)}
 
-위 이해를 평가할, 내적으로 정합한 GRASPS 번들 3개(axis 상이)를 생성하십시오.`;
+청중 근접성 축은 "${axis}"입니다. 이 축에 맞는, 내적으로 정합한 GRASPS 번들 1개를 생성하십시오.`;
 }
 
 /* ── 조건부 재생성 — 대상 요소 하나만 ──────────────────── */
