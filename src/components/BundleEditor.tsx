@@ -183,7 +183,7 @@ export default function BundleEditor(props: Props) {
       )}
 
       {/* 설계 논리 헤더 */}
-      <section className="mb-6 rounded-xl bg-blueprint p-5 text-paper shadow-sm print:bg-white print:text-ink print:shadow-none print:ring-1 print:ring-paper-line">
+      <section className="mb-6 break-inside-avoid rounded-xl bg-blueprint p-5 text-paper shadow-sm print:bg-white print:text-ink print:shadow-none print:ring-1 print:ring-paper-line">
         <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-paper print:bg-paper-line/40 print:text-ink-soft">
           {AXIS_LABEL[bundle.axis]} · {AXIS_SUB[bundle.axis]}
         </span>
@@ -195,7 +195,7 @@ export default function BundleEditor(props: Props) {
       {/* 정합성 감사 */}
       <section
         className={[
-          "mb-6 rounded-xl border p-4",
+          "mb-6 break-inside-avoid rounded-xl border p-4",
           audit && !audit.passed
             ? "border-rose-300 bg-rose-50/60"
             : "border-emerald-300/60 bg-emerald-50/50",
@@ -281,7 +281,7 @@ export default function BundleEditor(props: Props) {
                       <li
                         key={i}
                         className={[
-                          "rounded-lg border-l-4 p-3",
+                          "break-inside-avoid rounded-lg border-l-4 p-3",
                           m ? `${m.edge} ${m.surface}` : "border-paper-line bg-paper/40",
                         ].join(" ")}
                       >

@@ -77,17 +77,40 @@ body {
   border-radius: 2px;
 }
 
-/* PDF 인쇄 — 화면 크롬은 숨기고 결과만 종이에 깔끔하게 */
+/* PDF 인쇄 — 화면 크롬은 숨기고 결과만 종이에 넓게·읽기 좋게 */
 @media print {
   @page {
-    margin: 14mm;
+    /* 가로(넓게) A4. 본문이 페이지 폭에 100%로 들어가 축소되지 않는다. */
+    size: A4 landscape;
+    margin: 12mm;
   }
   html,
   body {
     background: #fff !important;
+    /* 브라우저가 내용을 한 장에 우겨넣어 축소하지 못하도록 스케일 고정 */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   main {
     padding: 0 !important;
+  }
+  /* 표·행·카드가 페이지 경계에서 잘리지 않게 */
+  table,
+  tr,
+  th,
+  td,
+  .break-inside-avoid {
+    break-inside: avoid;
+  }
+  /* 제목이 내용과 분리돼 페이지 끝에 홀로 남지 않게 */
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+  /* 인쇄 시 가로 스크롤 컨테이너는 전부 펼쳐 보이기 */
+  .overflow-x-auto {
+    overflow: visible !important;
   }
   .rise-in {
     animation: none !important;

@@ -359,7 +359,7 @@ export default function App() {
           백워드 설계(Wiggins &amp; McTighe, 2005) · UDL Guidelines 3.0(CAST,
           2024) 기반 · BYOK Gemini · 데이터는 브라우저에만 저장됩니다.
         </p>
-        <p className="mt-1 font-semibold text-thread">빌드 B3 · 번들 생성 방식 개선(축별 생성)</p>
+        <p className="mt-1 font-semibold text-thread">빌드 B4 · PDF 가로·여러 페이지 인쇄 개선</p>
       </footer>
 
       <ApiKeyModal
