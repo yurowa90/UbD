@@ -114,7 +114,7 @@ export default function BundleEditor(props: Props) {
   };
 
   return (
-    <div className="rise-in mx-auto max-w-4xl">
+    <div className="rise-in mx-auto max-w-4xl print:mx-0 print:max-w-none print:w-full">
       {/* 액션 바 */}
       <div className="sticky top-2 z-10 mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-paper-line bg-paper/90 p-2 shadow-sm backdrop-blur print:hidden">
         <button
