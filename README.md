@@ -1,98 +1,63 @@
-# GRASPS 설계 도우미 (MVP)
+# GRASPS 설계 도우미
 
-성취기준에서 GRASPS를 곧바로 뽑는 대신, **백워드 설계(UbD)의 정렬 원리**를 지키는 2단계 생성 파이프라인 웹앱입니다.
+과학과 성취기준에서 백워드 설계(UbD) Stage 1을 먼저 확정한 뒤, 그 이해를 평가하는 GRASPS 수행과제와 루브릭 초안을 만드는 웹앱입니다.
 
-> 성취기준 → GRASPS 직행은 "무엇에 대한 이해의 증거인가"가 비어 있는 과제를 만듭니다(Wiggins가 경고한 activity-oriented design). 이 앱은 Stage 1을 먼저 확정하고, 그 이해를 평가하는 과제를 생성합니다.
+- 바로 쓰기: **https://yurowa90.github.io/UbD/**
 
-## 파이프라인 (4단계 위저드, Pass 1 → 2a → 2b → 2c)
+## 누구를 위한 도구인가
 
-1. **입력**: **2022 개정 교육과정 과학과 공식 성취기준 473개**(초·중·고 22과목)에서 학교급→과목→영역→성취기준으로 골라 넣습니다(직접 입력 모드도 있음). 성취수준 A~E가 있는 371개 기준을 고르면, 그 공식 A~E 서술이 뒤 단계 루브릭 눈금의 근거로 쓰입니다.
-2. **Pass 1 — Stage 1 추출**: 성취기준 → 전이 목표 · 영속적 이해 2 · 본질적 질문 2 (교사가 인라인으로 검토·수정하는 **필수 관문**)
-3. **Pass 2a — GRASPS 요소 후보**: 확정된 Stage 1 → 6요소(G·R·A·S·P·S) 각각 **2~3개 후보 문장** 생성. 교사가 요소별로 하나를 고르고 필요하면 손봅니다. (원저 Wiggins & McTighe, Fig 7.7의 복수 문장 틀 설계를 반영)
-4. **Pass 2b — 완성(초안)**: 교사가 확정한 6요소 → 6요소를 통합한 학생용 안내문 + 루브릭. 루브릭 준거는 확정된 산출물·상황 진술에서 역추적 가능하도록 정렬되며, 공식 성취수준이 있는 기준이면 루브릭 수준을 그 A~E(과학탐구실험은 A~C) 체계에 맞춰 생성합니다.
-5. **Pass 2c — 자기검증**: 초안을 `quality_checklist`에 대조하는 **별도 검증 호출**. 정렬·역추적·진짜성·수준 서술을 점검해 문제가 있으면 그 부분만 교정하고(6요소는 불변), 무엇을 왜 고쳤는지 결과 화면에 표시합니다. 검증 호출이 실패해도 초안으로 폴백합니다.
+수행평가 과제를 설계하는 과학 교사를 위한 도구입니다. 성취기준에서 GRASPS 과제를 곧바로 뽑으면 "무엇을 이해했다는 증거인가"가 빠진 활동 중심 과제가 되기 쉽습니다. 이 앱은 영속적 이해와 본질적 질문을 먼저 정하고, 과제와 루브릭이 그 이해에 맞춰져 있는지 확인하도록 순서를 잡아 둡니다.
 
-**시그니처 — 정렬을 눈으로**: 각 영속적 이해에 색 표식(U1, U2…)이 붙고, 그 이해를 평가하는 루브릭 준거에 **같은 표식**이 다시 나타납니다. "이해 → 평가"의 정렬이 시각적으로 확인됩니다.
+## 무엇을 하나
 
-선택: **UDL 산출물 옵션** 토글을 켜면 같은 이해를 여러 산출 형태(보고서·발표·영상·모형)로 드러내도록 P를 다양화합니다(UDL 3.0 행동·표현의 다양한 수단).
+4단계로 진행합니다.
 
-**내보내기**: 완성된 결과는 **PDF**(브라우저 인쇄 — 한글 그대로, 인쇄 전용 레이아웃) · **엑셀 .xlsx**(개요·GRASPS·루브릭 3시트, 클릭 시에만 라이브러리 동적 로드) · **Markdown**(복사·다운로드)으로 저장할 수 있습니다.
+1. **입력** — 2022 개정 교육과정 과학과 공식 성취기준 473개(초·중·고 22과목)에서 학교급 → 과목 → 영역 → 성취기준 순으로 고릅니다. 직접 입력 모드도 있습니다. 공식 성취수준(A~E)이 있는 371개 기준을 고르면 그 서술이 루브릭 눈금의 근거가 됩니다.
+2. **Stage 1 검토** — 전이 목표, 영속적 이해 2개, 본질적 질문 2개가 생성됩니다. 교사가 검토하고 필요하면 고칩니다. 이 단계는 건너뛸 수 없습니다.
+3. **번들 선택** — 6요소(목표·역할·청중·상황·산출물·기준)가 서로 맞물린 GRASPS 과제 세트 3개가 나옵니다. 세 세트는 청중이 학급·학년 내부, 학교·지역사회, 전문가·공적 기관으로 서로 다릅니다. 하나를 고릅니다.
+4. **완성** — 요소별로 잠그거나 다시 생성할 수 있습니다. 한 요소를 바꾸면 그 요소에 기대는 다른 요소는 '갱신 필요'로 표시됩니다. 고른 세트는 별도의 정합성 감사를 거치며, 감사에 실패한 항목이나 갱신이 필요한 요소가 남아 있으면 내보내기가 잠깁니다.
 
-## 스택
+그 밖의 기능
 
-- Vite + React 19 + TypeScript, Tailwind CSS v4
-- 백엔드 없음 — **BYOK**(Bring Your Own Key) Gemini. API 키는 브라우저 localStorage에만 저장되고 Google로 직접 호출됩니다.
-- Gemini `responseSchema`로 JSON 강제 출력 → 파싱 오류 방지.
-- 정적 배포 — GitHub Pages(Actions 빌드, `.github/workflows/deploy.yml`) 또는 Vercel(`vercel.json`).
+- **정렬 표식**: 영속적 이해마다 색 표식(U1, U2…)이 붙고, 그 이해를 평가하는 루브릭 준거에도 같은 표식이 붙습니다.
+- **공식 성취수준 맞춤**: 성취수준이 있는 기준이면 루브릭 수준을 A~E(과학탐구실험은 A~C) 체계에 맞춥니다.
+- **UDL 산출물 옵션**: 켜면 같은 이해를 보고서·발표·영상·모형 등 여러 형태로 드러내도록 산출물을 다양화합니다(UDL 3.0).
+- **내보내기**: PDF(브라우저 인쇄), 엑셀 .xlsx(개요·GRASPS·루브릭 3시트), Markdown(복사·다운로드).
 
-## 로컬 실행
+## 사용 방법
+
+1. 위 주소를 엽니다.
+2. 오른쪽 위 **API 키 설정**에서 Google Gemini API 키를 등록합니다.
+   - 키는 [Google AI Studio](https://aistudio.google.com/app/apikey)에서 발급받습니다.
+   - 키는 이 브라우저의 localStorage에만 저장되고, 앱은 브라우저에서 Google API로 직접 요청합니다. 별도 서버로 보내지 않습니다.
+   - 같은 창에서 모델을 고를 수 있습니다(기본 Gemini 2.5 Flash). 고른 모델을 키가 지원하지 않으면 지원되는 모델로 자동 대체됩니다.
+3. 성취기준을 고르고 단계를 따라 진행합니다.
+
+## 내 컴퓨터에서 실행하기
+
+Node.js와 npm이 필요합니다.
 
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm run build    # tsc 타입체크 + 정적 빌드 → dist/
 ```
 
-앱을 열고 우상단 **API 키 설정**에서 [Google AI Studio](https://aistudio.google.com/app/apikey) 키를 등록하세요.
+## 한계
 
-## 배포 (GitHub Pages)
+- Gemini API 키가 있어야 생성 기능을 쓸 수 있습니다. 요청 한도를 넘으면(429) 잠시 뒤 다시 시도해야 합니다.
+- 생성 결과는 교사가 검토하고 고쳐 쓰는 초안입니다.
+- 내장 성취기준 목록은 2022 개정 교육과정 과학과만 들어 있습니다.
 
-백엔드가 없는 정적 앱이라 **GitHub Actions로 빌드해 Pages에 배포**합니다. `.github/workflows/deploy.yml`이 `main` 푸시마다 `npm ci && npm run build` 후 산출물을 Pages에 올립니다. 별도 시크릿은 필요 없습니다(`GITHUB_TOKEN` 자동 사용).
+## 근거 자료
 
-> ⚠️ 클래식 Pages("Deploy from a branch")는 빌드를 하지 않아 이 Vite 앱을 서빙하면 빈 화면이 됩니다. 반드시 아래 소스 설정을 **GitHub Actions**로 바꿔야 합니다.
+`src/knowledge/`의 지식 파일은 아래 원자료를 요약한 것이며, 각 파일에 1차 출처와 쪽·그림 번호를 적었습니다.
 
-**최초 1회 설정** (저장소 소유자가 직접 — 저장소 관리 설정이라 커밋으로는 못 바꿈):
-
-1. GitHub → 저장소 **Settings → Pages → Build and deployment → Source**를 **GitHub Actions**로 변경.
-2. 그 뒤 `main`에 푸시하면(또는 Actions 탭에서 "Deploy to GitHub Pages"를 수동 실행) 빌드·배포가 돌아갑니다.
-3. 배포 URL: **https://yurowa90.github.io/UbD/**
-
-경로 처리: Pages는 `/UbD/` 하위 경로로 서빙되므로, Pages 빌드일 때만 Vite `base`를 `/UbD/`로 둡니다(`vite.config.ts`, 워크플로가 `GITHUB_PAGES=true` 지정). 데이터 파일 fetch는 `import.meta.env.BASE_URL`을 써서 자동으로 `/UbD/science_standards.json`으로 해석됩니다.
-
-### 확인 사항
-
-- `public/science_standards.json`(≈503KB, gzip 69KB)은 출력 루트에 정적 파일로 서빙됩니다.
-- 아웃바운드는 브라우저 → Google Generative Language API 직접 호출뿐입니다. 서버 비밀 없음(BYOK).
-
-> 대안: Vercel로도 배포 가능합니다(`vercel.json` 포함, base는 루트 `/`). [vercel.com/new](https://vercel.com/new)에서 저장소를 Import하면 Vite로 자동 인식됩니다.
-
-## 구조
-
-```
-src/
-├─ App.tsx                # 3스텝 위저드 상태 머신 (input → stage1 → result)
-├─ components/
-│  ├─ InputForm.tsx       # 교과·학년·성취기준 입력
-│  ├─ Stage1Review.tsx    # 인라인 편집 가능한 Stage 1 검토 (건너뛸 수 없는 관문)
-│  ├─ CandidateSelect.tsx # 요소별 후보 선택·편집 (Pass 2a → 2b 사이)
-│  ├─ GraspsResult.tsx    # 6요소 카드 + 안내문 + 정렬 루브릭
-│  └─ ApiKeyModal.tsx     # BYOK 키·모델 설정
-├─ lib/
-│  ├─ gemini.ts           # generateStage1 / generateGraspsCandidates / generateGraspsFinal
-│  │                      #   (responseSchema 강제, 429/503 1회 재시도, 한국어 에러)
-│  ├─ standards.ts        # 공식 성취기준 로드 + 학교급/과목/영역 캐스케이드 헬퍼
-│  ├─ prompts.ts          # buildStage1*/buildCandidates*/buildFinal* + JSON 스키마
-│  ├─ markers.ts          # 정렬 마커 팔레트
-│  ├─ export.ts           # PDF(인쇄)·엑셀(.xlsx, 동적 로드)·Markdown 내보내기
-│  └─ storage.ts          # localStorage 래퍼
-├─ knowledge/             # Phase 0 증류 지식 (시스템 프롬프트에 임베드)
-│  ├─ ubd_stage1.md       # Stage 1 판별 기준 + Figure 1·2 원문 예시
-│  ├─ grasps.md           # GRASPS 6요소 + Stage 2 원리
-│  ├─ six_facets.md       # 이해의 여섯 측면 (과제·루브릭 설계 렌즈)
-│  ├─ udl.md              # UDL 3.0 행동·표현의 다양화
-│  └─ quality_checklist.md
-└─ types.ts
-
-public/
-└─ science_standards.json  # 2022 개정 과학과 성취기준 473 + 성취수준 A~E 371
-```
-
-## 근거 자료 (Phase 0)
-
-`knowledge/`는 아래 원자료를 앱 목적에 맞게 증류한 요약입니다. 각 파일에 1차 출처와 페이지·그림 번호를 표기했습니다.
-
-- **McTighe, J. & Wiggins, G. (2012). *Understanding by Design® Framework* [백서]. ASCD.** — `ubd_stage1.md`, `six_facets.md`, `quality_checklist.md`, `grasps.md`의 Stage 2 원리가 이 문서(3단계, 7개 원칙, Figure 1·2, 이해의 여섯 측면, 정렬, Appendix A·B)에 근거합니다.
-- Wiggins, G. & McTighe, J. (2005). *Understanding by Design* (Expanded 2nd ed.), 제7장 pp. 157–159, Figure 7.7 "GRASPS Task Design Prompts". ASCD. — **GRASPS 6요소 약어의 1차 출처.** 2012 백서에는 "GRASPS"라는 약어가 등장하지 않으므로, 약어 정의·프롬프트·예시는 이 원저 기준입니다. (P는 Product/Performance/Purpose로 혼용 → 코드 내부 키 `performanceProduct`로 통일)
-- CAST (2024). *UDL Guidelines version 3.0.* https://udlguidelines.cast.org — `udl.md`. (2.2와 체크포인트 문구가 다르므로 3.0 기준임을 명시)
+- McTighe, J. & Wiggins, G. (2012). *Understanding by Design® Framework* [백서]. ASCD. — Stage 1 판별 기준, 이해의 여섯 측면, 품질 점검표, Stage 2 원리.
+- Wiggins, G. & McTighe, J. (2005). *Understanding by Design* (Expanded 2nd ed.), 7장 pp. 157–159, Figure 7.7 "GRASPS Task Design Prompts". ASCD. — GRASPS 6요소 약어의 1차 출처(2012 백서에는 이 약어가 나오지 않습니다).
+- CAST (2024). *UDL Guidelines version 3.0.* https://udlguidelines.cast.org — UDL 산출물 옵션.
 
 원문 인용이 필요하면 각 원자료를 직접 확인하세요.
+
+## 개발 문서
+
+구조, 생성 단계의 내부 동작, 빌드와 배포 방법은 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)에 있습니다.
